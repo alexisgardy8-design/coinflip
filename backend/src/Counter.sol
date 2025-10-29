@@ -11,18 +11,35 @@ contract Counter is VRFConsumerBaseV2Plus {
     event RequestFulfilled(uint256 requestId, uint256[] randomWords);
     event PayoutSent(address counter, uint256 gain);
     event BetPlaced(address indexed bettor, uint256 amount, bool choice);
+    event CoinFlipRequested(uint256 indexed requestId, address indexed player);
+    event CoinFlipResult(uint256 indexed requestId, address indexed player, bool didWin, uint256 randomWord);
 
     struct RequestStatus {
         bool fulfilled; // whether the request has been successfully fulfilled
         bool exists; // whether a requestId exists
         uint256[] randomWords;
     }
-    mapping(uint256 => RequestStatus) public s_requests; 
-    mapping(address => uint256) public pendingBetAmount;
+  mapping(uint256 => RequestStatus) public s_requests; 
+
+  // 2% fees en basis points
+  uint16 public constant FEE_BPS = 200; // 2%
+  uint256 public constant MIN_BET = 0.001 ether;
+  address public immutable feeRecipient;
+
+  struct Flip {
+    address player;
+    bool choice;
+    uint256 betNet;   // mise nette après frais
+    bool settled;
+    bool didWin;
+  }
+
+  mapping(uint256 => Flip) public flips;              // requestId => Flip
+  mapping(address => uint256) public pendingWinnings; // joueur => gains à récupérer
    
 
 
-    uint256 public s_subscriptionId = 4937410816868527569599478232880574948340571343081385903828113851362140503943;
+  uint256 public s_subscriptionId = 4937410816868527569599478232880574948340571343081385903828113851362140503943;
     uint256[] public requestIds;
     uint256 public lastRequestId;
     bytes32 public keyHash = 0x9e1344a1247c8a1785d0a4681a27152bffdb43666ae5bf7d14d24a5efd44bf71;
@@ -36,29 +53,23 @@ contract Counter is VRFConsumerBaseV2Plus {
         feeRecipient = _feeRecipiant;
     }
 
-    uint256 public constant MIN_BET = 0.001 ether;
-    address public immutable feeRecipient;
-
   
-    function placeBet(bool choice) external payable {
-        // L'ETH est transféré au contrat automatiquement si la fonction ne revert pas.
-        require(msg.value >= MIN_BET, "Bet too small");
+  function placeBet(bool choice) external payable returns (uint256 requestId) {
+    require(msg.value >= MIN_BET, "Bet too small");
 
-        //frais
-        uint256 fee = (msg.value * 2) / 100; // 2% de frais
-        pendingBetAmount[msg.sender] = msg.value - fee;
-        // Si on arrive ici, la transaction est valide et les fonds sont au contrat.
-        emit BetPlaced(msg.sender, msg.value, choice);
-        // Interaction: on envoie les frais à feeRecipient
-        if (fee > 0) {
-            (bool ok, ) = payable(feeRecipient).call{value: fee}("");
-            require(ok, "Fee transfer failed");
-        }
+    // Frais 2%
+    uint256 fee = (msg.value * FEE_BPS) / 10_000;
+    uint256 net = msg.value - fee;
+
+    emit BetPlaced(msg.sender, msg.value, choice);
+
+    // Envoi des frais
+    if (fee > 0) {
+      (bool ok, ) = payable(feeRecipient).call{value: fee}("");
+      require(ok, "Fee transfer failed");
     }
 
-  function requestRandomWords() external returns (uint256 requestId) {
-    require(pendingBetAmount[msg.sender] > 0, "Bet not placed");
-    // Will revert if subscription is not set and funded.
+    // Demande VRF (Base Sepolia)
     requestId = s_vrfCoordinator.requestRandomWords(
       VRFV2PlusClient.RandomWordsRequest({
         keyHash: keyHash,
@@ -66,13 +77,26 @@ contract Counter is VRFConsumerBaseV2Plus {
         requestConfirmations: requestConfirmations,
         callbackGasLimit: callbackGasLimit,
         numWords: numWords,
-        extraArgs: VRFV2PlusClient._argsToBytes(VRFV2PlusClient.ExtraArgsV1({nativePayment: false}))
+        extraArgs: VRFV2PlusClient._argsToBytes(
+          VRFV2PlusClient.ExtraArgsV1({nativePayment: false})
+        )
       })
     );
+
+    // Enregistre le pari lié à la requête
+    flips[requestId] = Flip({
+      player: msg.sender,
+      choice: choice,
+      betNet: net,
+      settled: false,
+      didWin: false
+    });
+
     s_requests[requestId] = RequestStatus({randomWords: new uint256[](0), exists: true, fulfilled: false});
     requestIds.push(requestId);
     lastRequestId = requestId;
     emit RequestSent(requestId, numWords);
+    emit CoinFlipRequested(requestId, msg.sender);
     return requestId;
   }
 
@@ -80,6 +104,22 @@ contract Counter is VRFConsumerBaseV2Plus {
     require(s_requests[_requestId].exists, "request not found");
     s_requests[_requestId].fulfilled = true;
     s_requests[_requestId].randomWords = _randomWords;
+
+    // Récupère le pari et règle le résultat
+    Flip storage f = flips[_requestId];
+    if (f.player != address(0) && !f.settled) {
+        uint256 word = _randomWords[0];
+        bool flipSide = (word % 2 == 0);
+        bool didWin = (flipSide == f.choice);
+        f.settled = true;
+        f.didWin = didWin;
+        if (didWin) {
+            uint256 winAmount = f.betNet * 2;
+            pendingWinnings[f.player] += winAmount;
+        }
+        emit CoinFlipResult(_requestId, f.player, didWin, word);
+    }
+
     emit RequestFulfilled(_requestId, _randomWords);
   }
 
@@ -92,16 +132,17 @@ contract Counter is VRFConsumerBaseV2Plus {
   }
     
 
-  // Envoie depuis le contrat `amount` vers l'adresse `to` et émet PayoutSent si succès
-  function getPayout(address better, bool isWin) external {
-    require(pendingBetAmount[better] > 0, "Bet not placed");
-    require(better != address(0), "better=0");
-    require(isWin, "You lost the bet");
-    uint256 amount = pendingBetAmount[better] * 2;
-    bool sent;
-    (sent, ) = payable(better).call{value: amount}("");
-    require(sent, "Transfer failed");
-    emit PayoutSent(better, amount);
+  // Joueur réclame ses gains
+  function getPayout() external returns (uint256 amount) {
+    amount = pendingWinnings[msg.sender];
+    require(amount > 0, "No winnings");
+    // Effects
+    pendingWinnings[msg.sender] = 0;
+    // Interactions
+    (bool sent, ) = payable(msg.sender).call{value: amount}("");
+    require(sent, "Payout failed");
+    emit PayoutSent(msg.sender, amount);
+    return amount;
   }
 
   function isWinner(uint256 randomWord, bool choice) public pure returns (bool) {
@@ -112,11 +153,5 @@ contract Counter is VRFConsumerBaseV2Plus {
 
 
 
-    function setNumber(uint256 newNumber) public {
-        number = newNumber;
-    }
-
-    function increment() public {
-        number++;
-    }
+  // Admin or internal functions only — no public state-changing APIs other than placeBet/getPayout
 }
