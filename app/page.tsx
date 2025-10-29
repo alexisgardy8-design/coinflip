@@ -5,7 +5,9 @@ import { Wallet } from "@coinbase/onchainkit/wallet";
 import { useMiniKit } from "@coinbase/onchainkit/minikit";
 // import { useQuickAuth } from "@coinbase/onchainkit/minikit";
 import styles from "./page.module.css";
-import { COUNTER_ADDRESS } from "./contract";
+import { COUNTER_ADDRESS, COUNTER_ABI } from "./contract";
+import { useWriteContract, useWaitForTransactionReceipt } from "wagmi";
+import { parseEther } from "viem";
 
 export default function Home() {
   // If you need to verify the user's identity, you can use the useQuickAuth hook.
@@ -20,6 +22,12 @@ export default function Home() {
   const { setMiniAppReady, isMiniAppReady } = useMiniKit();
 
   const [betAmount, setBetAmount] = useState<string>("");
+  const [choice, setChoice] = useState<"heads" | "tails" | null>(null);
+
+  const { data: txHash, isPending, writeContract, error: writeError, reset } = useWriteContract();
+  const { isLoading: isConfirming, isSuccess: isConfirmed } = useWaitForTransactionReceipt({
+    hash: txHash,
+  });
 
   useEffect(() => {
     if (!isMiniAppReady) {
@@ -27,8 +35,32 @@ export default function Home() {
     }
   }, [setMiniAppReady, isMiniAppReady]);
 
-  const onSelect = (choice: "heads" | "tails") => {
-    console.log("Selected:", choice, "Amount (ETH):", betAmount);
+  const onSelect = (c: "heads" | "tails") => {
+    setChoice(c);
+    console.log("Selected:", c, "Amount (ETH):", betAmount);
+  };
+
+  const onPlaceBet = async () => {
+    if (!choice) return;
+    const amount = betAmount?.trim();
+    if (!amount) return;
+    try {
+      // Reset previous state if any
+      if (txHash || writeError) reset();
+
+      const value = parseEther(amount as `${number}`);
+      const picked = choice === "heads"; // true=heads, false=tails
+
+      await writeContract({
+        address: COUNTER_ADDRESS,
+        abi: COUNTER_ABI as any,
+        functionName: "placeBet",
+        args: [picked],
+        value,
+      });
+    } catch (e) {
+      console.error("placeBet error:", e);
+    }
   };
 
   return (
@@ -133,6 +165,48 @@ export default function Home() {
               Tails
             </button>
           </div>
+
+          <button
+            onClick={onPlaceBet}
+            disabled={isPending || !betAmount || !choice}
+            style={{
+              width: "100%",
+              height: 44,
+              marginTop: 12,
+              borderRadius: 8,
+              border: "1px solid #12406a",
+              background: isPending ? "#0e355b" : "#12406a",
+              color: "#fff",
+              fontWeight: 700,
+              cursor: isPending ? "not-allowed" : "pointer",
+            }}
+          >
+            {isPending ? "Sending…" : `Place Bet ${choice ? `(${choice})` : ""}`}
+          </button>
+
+          {(txHash || isConfirming || isConfirmed || writeError) && (
+            <div style={{ marginTop: 12, fontSize: 13 }}>
+              {txHash && (
+                <div style={{ marginBottom: 6 }}>
+                  Tx sent: {txHash.substring(0, 10)}…
+                  {" "}
+                  <a
+                    href={`https://sepolia.basescan.org/tx/${txHash}`}
+                    target="_blank"
+                    rel="noreferrer"
+                    style={{ color: "#9dd1ff" }}
+                  >
+                    View
+                  </a>
+                </div>
+              )}
+              {isConfirming && <div>Confirming on-chain…</div>}
+              {isConfirmed && <div>Confirmed ✔</div>}
+              {writeError && (
+                <div style={{ color: "#ffb4b4" }}>Error: {writeError.message}</div>
+              )}
+            </div>
+          )}
         </div>
 
         <h2 className={styles.componentsTitle}>Explore Components</h2>
