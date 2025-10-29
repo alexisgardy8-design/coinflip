@@ -7,7 +7,8 @@ import { useMiniKit } from "@coinbase/onchainkit/minikit";
 import styles from "./page.module.css";
 import { COUNTER_ADDRESS, COUNTER_ABI } from "./contract";
 import { useWriteContract, useWaitForTransactionReceipt } from "wagmi";
-import { parseEther } from "viem";
+import { Abi, parseEther } from "viem";
+
 
 export default function Home() {
   // If you need to verify the user's identity, you can use the useQuickAuth hook.
@@ -53,7 +54,7 @@ export default function Home() {
 
       await writeContract({
         address: COUNTER_ADDRESS,
-        abi: COUNTER_ABI as any,
+        abi: COUNTER_ABI as Abi,
         functionName: "placeBet",
         args: [picked],
         value,
