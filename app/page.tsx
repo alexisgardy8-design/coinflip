@@ -19,20 +19,23 @@ export default function Home() {
 
   const { setMiniAppReady, isMiniAppReady } = useMiniKit();
 
+  const [betAmount, setBetAmount] = useState<string>("");
+
   useEffect(() => {
     if (!isMiniAppReady) {
       setMiniAppReady();
     }
   }, [setMiniAppReady, isMiniAppReady]);
 
+  const onSelect = (choice: "heads" | "tails") => {
+    console.log("Selected:", choice, "Amount (ETH):", betAmount);
+  };
+
   return (
     <div className={styles.container}>
       <header className={styles.headerWrapper}>
         <Wallet />
       </header>
-
-      {/* Full-screen overlay visible by default */}
-      <BetOverlay />
 
       <div className={styles.content}>
         <Image
@@ -62,6 +65,73 @@ export default function Home() {
           >
             View on Basescan (Base Sepolia)
           </a>
+        </div>
+
+        <div style={{
+          marginTop: 16,
+          marginBottom: 24,
+          width: "100%",
+          maxWidth: 420,
+          border: "1px solid #2a2a2a",
+          borderRadius: 12,
+          padding: 16,
+          background: "#0b0b0b",
+        }}>
+          <h2 style={{ margin: 0, marginBottom: 12, fontSize: 20 }}>Place your bet</h2>
+          <label style={{ display: "block", fontSize: 14, opacity: 0.9, marginBottom: 8 }}>
+            Bet amount (ETH)
+          </label>
+          <input
+            type="number"
+            inputMode="decimal"
+            min="0"
+            step="0.001"
+            placeholder="0.001"
+            value={betAmount}
+            onChange={(e) => setBetAmount(e.target.value)}
+            style={{
+              width: "100%",
+              height: 44,
+              borderRadius: 8,
+              border: "1px solid #333",
+              background: "#111",
+              color: "#fff",
+              padding: "0 12px",
+              outline: "none",
+            }}
+          />
+          <div style={{ display: "flex", gap: 12, marginTop: 16 }}>
+            <button
+              onClick={() => onSelect("heads")}
+              style={{
+                flex: 1,
+                height: 44,
+                borderRadius: 8,
+                border: "1px solid #2e7dd7",
+                background: "#1a5fb4",
+                color: "#fff",
+                fontWeight: 600,
+                cursor: "pointer",
+              }}
+            >
+              Heads
+            </button>
+            <button
+              onClick={() => onSelect("tails")}
+              style={{
+                flex: 1,
+                height: 44,
+                borderRadius: 8,
+                border: "1px solid #d76e2e",
+                background: "#b45f1a",
+                color: "#fff",
+                fontWeight: 600,
+                cursor: "pointer",
+              }}
+            >
+              Tails
+            </button>
+          </div>
         </div>
 
         <h2 className={styles.componentsTitle}>Explore Components</h2>
@@ -96,100 +166,6 @@ export default function Home() {
             </li>
           ))}
         </ul>
-      </div>
-    </div>
-  );
-}
-
-function BetOverlay() {
-  const [betAmount, setBetAmount] = useState<string>("");
-
-  const onSelect = (choice: "heads" | "tails") => {
-    // For now, only capture the selection and amount as requested
-    // You can wire this to your betting logic later
-    console.log("Selected:", choice, "Amount (ETH):", betAmount);
-  };
-
-  return (
-    <div
-      style={{
-        position: "fixed",
-        inset: 0,
-        background: "rgba(0,0,0,0.6)",
-        zIndex: 1000,
-        display: "flex",
-        alignItems: "center",
-        justifyContent: "center",
-        padding: 16,
-      }}
-    >
-      <div
-        style={{
-          width: "100%",
-          maxWidth: 380,
-          background: "#0b0b0b",
-          border: "1px solid #2a2a2a",
-          borderRadius: 12,
-          padding: 20,
-          color: "#fff",
-          boxShadow: "0 10px 30px rgba(0,0,0,0.5)",
-        }}
-      >
-        <h2 style={{ margin: 0, marginBottom: 12, fontSize: 20 }}>Place your bet</h2>
-        <label style={{ display: "block", fontSize: 14, opacity: 0.9, marginBottom: 8 }}>
-          Bet amount (ETH)
-        </label>
-        <input
-          type="number"
-          inputMode="decimal"
-          min="0"
-          step="0.001"
-          placeholder="0.001"
-          value={betAmount}
-          onChange={(e) => setBetAmount(e.target.value)}
-          style={{
-            width: "100%",
-            height: 44,
-            borderRadius: 8,
-            border: "1px solid #333",
-            background: "#111",
-            color: "#fff",
-            padding: "0 12px",
-            outline: "none",
-          }}
-        />
-        <div style={{ display: "flex", gap: 12, marginTop: 16 }}>
-          <button
-            onClick={() => onSelect("heads")}
-            style={{
-              flex: 1,
-              height: 44,
-              borderRadius: 8,
-              border: "1px solid #2e7dd7",
-              background: "#1a5fb4",
-              color: "#fff",
-              fontWeight: 600,
-              cursor: "pointer",
-            }}
-          >
-            Heads
-          </button>
-          <button
-            onClick={() => onSelect("tails")}
-            style={{
-              flex: 1,
-              height: 44,
-              borderRadius: 8,
-              border: "1px solid #d76e2e",
-              background: "#b45f1a",
-              color: "#fff",
-              fontWeight: 600,
-              cursor: "pointer",
-            }}
-          >
-            Tails
-          </button>
-        </div>
       </div>
     </div>
   );
