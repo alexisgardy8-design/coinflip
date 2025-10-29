@@ -72,13 +72,14 @@ export default function Home() {
           marginBottom: 24,
           width: "100%",
           maxWidth: 420,
-          border: "1px solid #2a2a2a",
+          border: "1px solid #12406a",
           borderRadius: 12,
           padding: 16,
-          background: "#0b0b0b",
+          background: "#0b2e50",
+          color: "#fff",
         }}>
           <h2 style={{ margin: 0, marginBottom: 12, fontSize: 20 }}>Place your bet</h2>
-          <label style={{ display: "block", fontSize: 14, opacity: 0.9, marginBottom: 8 }}>
+          <label style={{ display: "block", fontSize: 14, opacity: 0.9, marginBottom: 8, color: "#fff" }}>
             Bet amount (ETH)
           </label>
           <input
@@ -93,8 +94,8 @@ export default function Home() {
               width: "100%",
               height: 44,
               borderRadius: 8,
-              border: "1px solid #333",
-              background: "#111",
+              border: "1px solid #12406a",
+              background: "#0e355b",
               color: "#fff",
               padding: "0 12px",
               outline: "none",
@@ -107,8 +108,8 @@ export default function Home() {
                 flex: 1,
                 height: 44,
                 borderRadius: 8,
-                border: "1px solid #2e7dd7",
-                background: "#1a5fb4",
+                border: "1px solid #12406a",
+                background: "#0b2e50",
                 color: "#fff",
                 fontWeight: 600,
                 cursor: "pointer",
@@ -122,8 +123,8 @@ export default function Home() {
                 flex: 1,
                 height: 44,
                 borderRadius: 8,
-                border: "1px solid #d76e2e",
-                background: "#b45f1a",
+                border: "1px solid #12406a",
+                background: "#0b2e50",
                 color: "#fff",
                 fontWeight: 600,
                 cursor: "pointer",
