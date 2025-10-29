@@ -64,6 +64,15 @@ export default function Home() {
     }
   };
 
+  // 2% of the entered bet in ETH (display only)
+  const feeText = (() => {
+    if (!betAmount) return null;
+    const amountNum = Number(betAmount);
+    if (!Number.isFinite(amountNum) || amountNum <= 0) return null;
+    const fee = amountNum * 0.02; // 2% of bet in ETH
+    return fee.toLocaleString(undefined, { maximumFractionDigits: 6 });
+  })();
+
   return (
     <div className={styles.container}>
       <header className={styles.headerWrapper}>
@@ -184,6 +193,12 @@ export default function Home() {
           >
             {isPending ? "Sending…" : `Place Bet ${choice ? `(${choice})` : ""}`}
           </button>
+
+          {feeText && (
+            <div style={{ marginTop: 8, fontSize: 12, color: "#cfe8ff" }}>
+              2% fees on bet placed: {feeText} ETH
+            </div>
+          )}
 
           {(txHash || isConfirming || isConfirmed || writeError) && (
             <div style={{ marginTop: 12, fontSize: 13 }}>

@@ -22,7 +22,7 @@ contract Counter is VRFConsumerBaseV2Plus {
   mapping(uint256 => RequestStatus) public s_requests; 
 
   // 2% fees en basis points
-  uint16 public constant FEE_BPS = 200; // 2%
+  
   uint256 public constant MIN_BET = 0.001 ether;
   address public immutable feeRecipient;
 
@@ -58,7 +58,7 @@ contract Counter is VRFConsumerBaseV2Plus {
     require(msg.value >= MIN_BET, "Bet too small");
 
     // Frais 2%
-    uint256 fee = (msg.value * FEE_BPS) / 10_000;
+    uint256 fee = (msg.value * 2) / 100;
     uint256 net = msg.value - fee;
 
     emit BetPlaced(msg.sender, msg.value, choice);
