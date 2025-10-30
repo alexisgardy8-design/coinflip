@@ -1,107 +1,264 @@
-'use client';
-import { useCallback, useMemo, useState } from 'react';
-import { Avatar, Name } from '@coinbase/onchainkit/identity';
-import { 
-  Transaction, 
-  TransactionButton,
-  TransactionSponsor,
-  TransactionStatus,
-  TransactionStatusAction,
-  TransactionStatusLabel,
-} from '@coinbase/onchainkit/transaction'; 
-import type { LifecycleStatus } from '@coinbase/onchainkit/transaction';
-import { Wallet, ConnectWallet } from '@coinbase/onchainkit/wallet';
-import { useAccount } from 'wagmi';
-import { encodeFunctionData, parseEther } from 'viem';
+"use client";
+import { useEffect, useState } from "react";
+import Image from "next/image";
+import { Wallet } from "@coinbase/onchainkit/wallet";
+import { useMiniKit } from "@coinbase/onchainkit/minikit";
+// import { useQuickAuth } from "@coinbase/onchainkit/minikit";
+import styles from "./page.module.css";
+import { COUNTER_ADDRESS, COUNTER_ABI } from "./contract";
+import { useWriteContract, useWaitForTransactionReceipt } from "wagmi";
+import { Abi, parseEther } from "viem";
+import { Transaction } from "@coinbase/onchainkit/transaction";
 
-// ---cut-start---
-const BASE_SEPOLIA_CHAIN_ID = 84532;
-const COUNTER_ADDRESS: `0x${string}` = "0x14805a57fC436F390a644fb9897162adD0c36905";
 
-// ABI minimale pour placeBet(bool) payable
-const counterAbi = [
-  {
-    type: 'function',
-    name: 'placeBet',
-    stateMutability: 'payable',
-    inputs: [{ name: 'choice', type: 'bool' }],
-    outputs: [],
-  },
-] as const;
-// ---cut-end---
+export default function Home() {
+  // If you need to verify the user's identity, you can use the useQuickAuth hook.
+  // This hook will verify the user's signature and return the user's FID. You can update
+  // this to meet your needs. See the /app/api/auth/route.ts file for more details.
+  // Note: If you don't need to verify the user's identity, you can get their FID and other user data
+  // via `useMiniKit().context?.user`.
+  // const { data, isLoading, error } = useQuickAuth<{
+  //   userFid: string;
+  // }>("/api/auth");
 
-export default function TransactionComponents() {
-  const { address } = useAccount();
+  const { setMiniAppReady, isMiniAppReady } = useMiniKit();
 
-  // UI simple: montant en ETH + choix
-  const [amountEth, setAmountEth] = useState('0.01');
-  const [choice, setChoice] = useState<boolean | null>(null);
+  const [betAmount, setBetAmount] = useState<string>("");
+  const [choice, setChoice] = useState<"heads" | "tails" | null>(null);
 
-  const calls = useMemo(() => {
-    if (!COUNTER_ADDRESS || choice === null) return [];
-    const data = encodeFunctionData({
-      abi: counterAbi,
-      functionName: 'placeBet',
-      args: [choice],
-    });
-    const value = parseEther(amountEth || '0');
-    return [{ to: COUNTER_ADDRESS, data, value }];
-  }, [amountEth, choice]);
+  const { data: txHash, isPending, writeContract, error: writeError, reset } = useWriteContract();
+  const { isLoading: isConfirming, isSuccess: isConfirmed } = useWaitForTransactionReceipt({
+    hash: txHash,
+  });
 
-  const handleOnStatus = useCallback((status: LifecycleStatus) => {
-    console.log('LifecycleStatus', status);
-  }, []);
+  useEffect(() => {
+    if (!isMiniAppReady) {
+      setMiniAppReady();
+    }
+  }, [setMiniAppReady, isMiniAppReady]);
+
+  const onSelect = (c: "heads" | "tails") => {
+    setChoice(c);
+    console.log("Selected:", c, "Amount (ETH):", betAmount);
+  };
+
+  const onPlaceBet = async () => {
+    if (!choice) return;
+    const amount = betAmount?.trim();
+    if (!amount) return;
+    try {
+      // Reset previous state if any
+      if (txHash || writeError) reset();
+
+      const value = parseEther(amount as `${number}`);
+      const picked = choice === "heads"; // true=heads, false=tails
+
+      await writeContract({
+        address: COUNTER_ADDRESS,
+        abi: COUNTER_ABI as Abi,
+        functionName: "placeBet",
+        args: [picked],
+        value,
+      });
+    } catch (e) {
+      console.error("placeBet error:", e);
+    }
+  };
+
+  // 2% of the entered bet in ETH (display only)
+  const feeText = (() => {
+    if (!betAmount) return null;
+    const amountNum = Number(betAmount);
+    if (!Number.isFinite(amountNum) || amountNum <= 0) return null;
+    const fee = amountNum * 0.02; // 2% of bet in ETH
+    return fee.toLocaleString(undefined, { maximumFractionDigits: 6 });
+  })();
 
   return (
-    <div style={{ maxWidth: 520, margin: '24px auto', display: 'grid', gap: 16 }}>
-      {/* Wallet connect always visible at the top */}
-      <div style={{ display: 'flex', justifyContent: 'flex-end' }}>
-        <Wallet>
-          <ConnectWallet>
-            <Avatar className='h-6 w-6' />
-            <Name />
-          </ConnectWallet>
-        </Wallet>
-      </div>
+    <div className={styles.container}>
+      <header className={styles.headerWrapper}>
+        <Wallet />
+      </header>
 
-      {address ? (
-        <>
-      <label style={{ fontSize: 14 }}>Bet amount (ETH)</label>
-      <input
-        value={amountEth}
-        onChange={(e) => setAmountEth(e.target.value)}
-        inputMode="decimal"
-        placeholder="0.01"
-        style={{ padding: 10, border: '1px solid #12406a', borderRadius: 8 }}
-      />
-      <div style={{ display: 'flex', gap: 8 }}>
-        <button
-          onClick={() => setChoice(true)}
-          style={{ flex: 1, background: '#0b2e50', color: '#fff', border: '1px solid #12406a', borderRadius: 8, padding: 10 }}
-        >
-          Heads
-        </button>
-        <button
-          onClick={() => setChoice(false)}
-          style={{ flex: 1, background: '#0b2e50', color: '#fff', border: '1px solid #12406a', borderRadius: 8, padding: 10 }}
-        >
-          Tails
-        </button>
-      </div>
+      <div className={styles.content}>
+        <Image
+          priority
+          src="/sphere.svg"
+          alt="Sphere"
+          width={200}
+          height={200}
+        />
+        <h1 className={styles.title}>MiniKit</h1>
 
-      <div style={{ fontSize: 12, color: '#cfe8ff' }}>Transaction: Place Bet</div>
-      <Transaction chainId={BASE_SEPOLIA_CHAIN_ID} calls={calls} onStatus={handleOnStatus}>
-        <TransactionButton />
-        <TransactionSponsor />
-        <TransactionStatus>
-          <TransactionStatusLabel />
-          <TransactionStatusAction />
-        </TransactionStatus>
-      </Transaction>
-        </>
-      ) : (
-        <div style={{ color: '#666', fontSize: 14 }}>Connect your wallet to place a bet.</div>
-      )}
+        <p>
+          Get started by editing <code>app/page.tsx</code>
+        </p>
+
+        <div style={{ marginTop: 16, marginBottom: 24, textAlign: "center" }}>
+          <p style={{ marginBottom: 8 }}>
+            Contract address:
+          </p>
+          <p style={{ wordBreak: "break-all", marginBottom: 8 }}>
+            <code>{COUNTER_ADDRESS}</code>
+          </p>
+          <a
+            target="_blank"
+            rel="noreferrer"
+            href={`https://sepolia.basescan.org/address/${COUNTER_ADDRESS}`}
+          >
+            View on Basescan (Base Sepolia)
+          </a>
+        </div>
+
+        <div style={{
+          marginTop: 16,
+          marginBottom: 24,
+          width: "100%",
+          maxWidth: 420,
+          border: "1px solid #12406a",
+          borderRadius: 12,
+          padding: 16,
+          background: "#0b2e50",
+          color: "#fff",
+        }}>
+          <h2 style={{ margin: 0, marginBottom: 12, fontSize: 20 }}>Place your bet</h2>
+          <label style={{ display: "block", fontSize: 14, opacity: 0.9, marginBottom: 8, color: "#fff" }}>
+            Bet amount (ETH)
+          </label>
+          <input
+            type="number"
+            inputMode="decimal"
+            min="0"
+            step="0.001"
+            placeholder="0.001"
+            value={betAmount}
+            onChange={(e) => setBetAmount(e.target.value)}
+            style={{
+              width: "100%",
+              height: 44,
+              borderRadius: 8,
+              border: "1px solid #12406a",
+              background: "#0e355b",
+              color: "#fff",
+              padding: "0 12px",
+              outline: "none",
+            }}
+          />
+          <div style={{ display: "flex", gap: 12, marginTop: 16 }}>
+            <button
+              onClick={() => onSelect("heads")}
+              style={{
+                flex: 1,
+                height: 44,
+                borderRadius: 8,
+                border: "1px solid #12406a",
+                background: "#0b2e50",
+                color: "#fff",
+                fontWeight: 600,
+                cursor: "pointer",
+              }}
+            >
+              Heads
+            </button>
+            <button
+              onClick={() => onSelect("tails")}
+              style={{
+                flex: 1,
+                height: 44,
+                borderRadius: 8,
+                border: "1px solid #12406a",
+                background: "#0b2e50",
+                color: "#fff",
+                fontWeight: 600,
+                cursor: "pointer",
+              }}
+            >
+              Tails
+            </button>
+          </div>
+
+          <button
+            onClick={onPlaceBet}
+            disabled={isPending || !betAmount || !choice}
+            style={{
+              width: "100%",
+              height: 44,
+              marginTop: 12,
+              borderRadius: 8,
+              border: "1px solid #12406a",
+              background: isPending ? "#0e355b" : "#12406a",
+              color: "#fff",
+              fontWeight: 700,
+              cursor: isPending ? "not-allowed" : "pointer",
+            }}
+          >
+            {isPending ? "Sending…" : `Place Bet ${choice ? `(${choice})` : ""}`}
+          </button>
+
+          {feeText && (
+            <div style={{ marginTop: 8, fontSize: 12, color: "#cfe8ff" }}>
+              2% fees on bet placed: {feeText} ETH
+            </div>
+          )}
+
+          {(txHash || isConfirming || isConfirmed || writeError) && (
+            <div style={{ marginTop: 12, fontSize: 13 }}>
+              {txHash && (
+                <div style={{ marginBottom: 6 }}>
+                  Tx sent: {txHash.substring(0, 10)}…
+                  {" "}
+                  <a
+                    href={`https://sepolia.basescan.org/tx/${txHash}`}
+                    target="_blank"
+                    rel="noreferrer"
+                    style={{ color: "#9dd1ff" }}
+                  >
+                    View
+                  </a>
+                </div>
+              )}
+              {isConfirming && <div>Confirming on-chain…</div>}
+              {isConfirmed && <div>Confirmed ✔</div>}
+              {writeError && (
+                <div style={{ color: "#ffb4b4" }}>Error: {writeError.message}</div>
+              )}
+            </div>
+          )}
+        </div>
+
+        <h2 className={styles.componentsTitle}>Explore Components</h2>
+
+        <ul className={styles.components}>
+          {[
+            {
+              name: "Transaction",
+              url: "https://docs.base.org/onchainkit/transaction/transaction",
+            },
+            {
+              name: "Swap",
+              url: "https://docs.base.org/onchainkit/swap/swap",
+            },
+            {
+              name: "Checkout",
+              url: "https://docs.base.org/onchainkit/checkout/checkout",
+            },
+            {
+              name: "Wallet",
+              url: "https://docs.base.org/onchainkit/wallet/wallet",
+            },
+            {
+              name: "Identity",
+              url: "https://docs.base.org/onchainkit/identity/identity",
+            },
+          ].map((component) => (
+            <li key={component.name}>
+              <a target="_blank" rel="noreferrer" href={component.url}>
+                {component.name}
+              </a>
+            </li>
+          ))}
+        </ul>
+      </div>
     </div>
   );
 }

@@ -13,6 +13,7 @@ contract Counter is VRFConsumerBaseV2Plus {
     event BetPlaced(address indexed bettor, uint256 amount, bool choice);
     event CoinFlipRequested(uint256 indexed requestId, address indexed player);
     event CoinFlipResult(uint256 indexed requestId, address indexed player, bool didWin, uint256 randomWord);
+  event FeePaid(address indexed recipient, uint256 amount);
 
     struct RequestStatus {
         bool fulfilled; // whether the request has been successfully fulfilled
@@ -80,12 +81,6 @@ contract Counter is VRFConsumerBaseV2Plus {
 
       emit BetPlaced(msg.sender, msg.value, choice);
 
-      // Envoi des frais
-      if (fee > 0) {
-        (bool ok, ) = payable(feeRecipient).call{value: fee}("");
-        require(ok, "Fee transfer failed");
-      }
-
 
 
       // Demande VRF (Base Sepolia)
@@ -116,6 +111,13 @@ contract Counter is VRFConsumerBaseV2Plus {
     lastRequestId = requestId;
     emit RequestSent(requestId, numWords);
     emit CoinFlipRequested(requestId, msg.sender);
+
+    // Envoi des frais en dernier (Checks-Effects-Interactions)
+    if (fee > 0) {
+      (bool ok, ) = payable(feeRecipient).call{value: fee}("");
+      require(ok, "Fee transfer failed");
+      emit FeePaid(feeRecipient, fee);
+    }
     return requestId;
   }
 
