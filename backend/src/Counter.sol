@@ -9,7 +9,7 @@ contract Counter is VRFConsumerBaseV2Plus {
     uint256 public number;
     event RequestSent(uint256 requestId, uint32 numWords);
     event RequestFulfilled(uint256 requestId, uint256[] randomWords);
-    event PayoutSent(address counter, uint256 gain);
+  event PayoutSent(address counter, uint256 gain);
     event BetPlaced(address indexed bettor, uint256 amount, bool choice);
     event CoinFlipRequested(uint256 indexed requestId, address indexed player);
     event CoinFlipResult(uint256 indexed requestId, address indexed player, bool didWin, uint256 randomWord);
@@ -22,7 +22,7 @@ contract Counter is VRFConsumerBaseV2Plus {
     }
     mapping(uint256 => RequestStatus) public s_requests; 
 
-    // 2% fees en basis points
+  // 2% fees handled separately via forwardFee(); not taken inside placeBet
   
     uint256 public constant MIN_BET = 0.001 ether;
     address public immutable feeRecipient;
@@ -75,13 +75,10 @@ contract Counter is VRFConsumerBaseV2Plus {
     function placeBet(bool choice) external payable returns (uint256 requestId) {
       require(msg.value >= MIN_BET, "Bet too small");
 
-      // Frais 2%
-      uint256 fee = (msg.value * 2) / 100;
-      uint256 net = msg.value - fee;
+      // Ici msg.value représente la mise nette (déjà hors frais)
+      uint256 net = msg.value;
 
       emit BetPlaced(msg.sender, msg.value, choice);
-
-
 
       // Demande VRF (Base Sepolia)
       requestId = s_vrfCoordinator.requestRandomWords(
@@ -112,13 +109,16 @@ contract Counter is VRFConsumerBaseV2Plus {
     emit RequestSent(requestId, numWords);
     emit CoinFlipRequested(requestId, msg.sender);
 
-    // Envoi des frais en dernier (Checks-Effects-Interactions)
-    if (fee > 0) {
-      (bool ok, ) = payable(feeRecipient).call{value: fee}("");
-      require(ok, "Fee transfer failed");
-      emit FeePaid(feeRecipient, fee);
-    }
     return requestId;
+  }
+
+  // Permet d'envoyer les frais (2% calculés côté front) du contrat vers feeRecipient
+  // UX: le front envoie une 2ème transaction avec value = fee, et le contrat la transfère aussitôt au destinataire des frais
+  function forwardFee() external payable {
+    require(msg.value > 0, "No fee sent");
+    (bool ok, ) = payable(feeRecipient).call{value: msg.value}("");
+    require(ok, "Fee transfer failed");
+    emit FeePaid(feeRecipient, msg.value);
   }
 
   function fulfillRandomWords(uint256 _requestId, uint256[] calldata _randomWords) internal override {

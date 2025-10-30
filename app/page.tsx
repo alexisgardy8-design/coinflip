@@ -6,7 +6,7 @@ import { useMiniKit } from "@coinbase/onchainkit/minikit";
 // import { useQuickAuth } from "@coinbase/onchainkit/minikit";
 import styles from "./page.module.css";
 import { COUNTER_ADDRESS, COUNTER_ABI } from "./contract";
-import { useWriteContract, useWaitForTransactionReceipt, usePublicClient, useAccount, useChainId } from "wagmi";
+import { useWriteContract, useWaitForTransactionReceipt, usePublicClient } from "wagmi";
 import { Abi, parseEther } from "viem";
 
 
@@ -24,12 +24,9 @@ export default function Home() {
 
   const [betAmount, setBetAmount] = useState<string>("");
   const [choice, setChoice] = useState<"heads" | "tails" | null>(null);
-  const publicClient = usePublicClient();
-  const chainId = useChainId();
-  const { address } = useAccount();
-  const [simulateError, setSimulateError] = useState<string | null>(null);
 
-  const { data: txHash, isPending, writeContract, error: writeError, reset } = useWriteContract();
+  const { data: txHash, isPending, writeContract, writeContractAsync, error: writeError, reset } = useWriteContract();
+  const publicClient = usePublicClient();
   const { isLoading: isConfirming, isSuccess: isConfirmed } = useWaitForTransactionReceipt({
     hash: txHash,
   });
@@ -49,51 +46,40 @@ export default function Home() {
     if (!choice) return;
     const amount = betAmount?.trim();
     if (!amount) return;
-    // Guards
-    if (!address) {
-      setSimulateError("Connect wallet first.");
-      return;
-    }
-    if (!publicClient) {
-      setSimulateError("RPC client not ready. Try again in a moment.");
-      return;
-    }
-    if (chainId !== 84532) {
-      setSimulateError("Wrong network. Please switch to Base Sepolia (84532).");
-      return;
-    }
     try {
       // Reset previous state if any
       if (txHash || writeError) reset();
-      setSimulateError(null);
 
-      const value = parseEther(amount);
+      const totalWei = parseEther(amount as `${number}`);
+      const feeWei = (totalWei * BigInt(2)) / BigInt(100); // 2%
+      const netWei = totalWei - feeWei;      // montant net pour le pari
       const picked = choice === "heads"; // true=heads, false=tails
 
-      // 1) Preflight simulate to catch revert reasons before prompting wallet
-      try {
-        await publicClient.simulateContract({
-          account: address,
-          address: COUNTER_ADDRESS,
-          abi: COUNTER_ABI as Abi,
-          functionName: "placeBet",
-          args: [picked],
-          value,
-        });
-      } catch (err: any) {
-        // Surface revert reason
-        const msg = err?.shortMessage || err?.message || "Simulation failed";
-        setSimulateError(msg);
-        console.error("simulateContract error:", err);
-        return;
-      }
-
-      await writeContract({
+      // 1) Transaction de pari (value = net)
+      const betHash = await writeContractAsync({
         address: COUNTER_ADDRESS,
         abi: COUNTER_ABI as Abi,
         functionName: "placeBet",
         args: [picked],
-        value,
+        value: netWei,
+      });
+
+      // Attendre la confirmation du pari avant d'envoyer les frais
+      if (publicClient) {
+        const receipt = await publicClient.waitForTransactionReceipt({ hash: betHash });
+        if (receipt.status !== "success") {
+          console.warn("Bet tx did not succeed; skipping fee forwarding.");
+          return;
+        }
+      }
+
+      // 2) Transaction des frais (value = fee) : le contrat renvoie immédiatement vers feeRecipient
+      await writeContractAsync({
+        address: COUNTER_ADDRESS,
+        abi: COUNTER_ABI as Abi,
+        functionName: "forwardFee",
+        args: [],
+        value: feeWei,
       });
     } catch (e) {
       console.error("placeBet error:", e);
@@ -238,11 +224,6 @@ export default function Home() {
 
           {(txHash || isConfirming || isConfirmed || writeError) && (
             <div style={{ marginTop: 12, fontSize: 13 }}>
-              {simulateError && (
-                <div style={{ marginBottom: 6, color: "#ffb4b4" }}>
-                  Simulation error: {simulateError}
-                </div>
-              )}
               {txHash && (
                 <div style={{ marginBottom: 6 }}>
                   Tx sent: {txHash.substring(0, 10)}…
