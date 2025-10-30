@@ -19,27 +19,27 @@ contract Counter is VRFConsumerBaseV2Plus {
         bool exists; // whether a requestId exists
         uint256[] randomWords;
     }
-  mapping(uint256 => RequestStatus) public s_requests; 
+    mapping(uint256 => RequestStatus) public s_requests; 
 
-  // 2% fees en basis points
+    // 2% fees en basis points
   
-  uint256 public constant MIN_BET = 0.001 ether;
-  address public immutable feeRecipient;
+    uint256 public constant MIN_BET = 0.001 ether;
+    address public immutable feeRecipient;
 
-  struct Flip {
-    address player;
-    bool choice;
-    uint256 betNet;   // mise nette après frais
-    bool settled;
-    bool didWin;
-  }
+    struct Flip {
+      address player;
+      bool choice;
+      uint256 betNet;   // mise nette après frais
+      bool settled;
+      bool didWin;
+    }
 
-  mapping(uint256 => Flip) public flips;              // requestId => Flip
-  mapping(address => uint256) public pendingWinnings; // joueur => gains à récupérer
+    mapping(uint256 => Flip) public flips;              // requestId => Flip
+    mapping(address => uint256) public pendingWinnings; // joueur => gains à récupérer
    
 
 
-  uint256 public s_subscriptionId = 4937410816868527569599478232880574948340571343081385903828113851362140503943;
+    uint256 public s_subscriptionId = 4937410816868527569599478232880574948340571343081385903828113851362140503943;
     uint256[] public requestIds;
     uint256 public lastRequestId;
     bytes32 public keyHash = 0x9e1344a1247c8a1785d0a4681a27152bffdb43666ae5bf7d14d24a5efd44bf71;
@@ -47,37 +47,56 @@ contract Counter is VRFConsumerBaseV2Plus {
     uint16 public requestConfirmations = 3;
     uint32 public numWords =  1;
 
-
     constructor( uint256 subscriptionId, address _feeRecipiant) VRFConsumerBaseV2Plus(0x5C210eF41CD1a72de73bF76eC39637bB0d3d7BEE) {
         s_subscriptionId = subscriptionId;
         feeRecipient = _feeRecipiant;
     }
 
-  
-  function placeBet(bool choice) external payable returns (uint256 requestId) {
-    require(msg.value >= MIN_BET, "Bet too small");
 
-    // Frais 2%
-    uint256 fee = (msg.value * 2) / 100;
-    uint256 net = msg.value - fee;
-
-    emit BetPlaced(msg.sender, msg.value, choice);
-
-    // Envoi des frais
-    if (fee > 0) {
-      (bool ok, ) = payable(feeRecipient).call{value: fee}("");
-      require(ok, "Fee transfer failed");
+    function requestRandomWords() external onlyOwner returns (uint256 requestId) {
+      // Will revert if subscription is not set and funded.
+      requestId = s_vrfCoordinator.requestRandomWords(
+        VRFV2PlusClient.RandomWordsRequest({
+          keyHash: keyHash,
+          subId: s_subscriptionId,
+          requestConfirmations: requestConfirmations,
+          callbackGasLimit: callbackGasLimit,
+          numWords: numWords,
+          extraArgs: VRFV2PlusClient._argsToBytes(VRFV2PlusClient.ExtraArgsV1({nativePayment: false}))
+        })
+      );
+      s_requests[requestId] = RequestStatus({randomWords: new uint256[](0), exists: true, fulfilled: false});
+      requestIds.push(requestId);
+      lastRequestId = requestId;
+      emit RequestSent(requestId, numWords);
+      return requestId;
     }
+    function placeBet(bool choice) external payable returns (uint256 requestId) {
+      require(msg.value >= MIN_BET, "Bet too small");
 
-    // Demande VRF (Base Sepolia)
-    requestId = s_vrfCoordinator.requestRandomWords(
-      VRFV2PlusClient.RandomWordsRequest({
-        keyHash: keyHash,
-        subId: s_subscriptionId,
-        requestConfirmations: requestConfirmations,
-        callbackGasLimit: callbackGasLimit,
-        numWords: numWords,
-        extraArgs: VRFV2PlusClient._argsToBytes(
+      // Frais 2%
+      uint256 fee = (msg.value * 2) / 100;
+      uint256 net = msg.value - fee;
+
+      emit BetPlaced(msg.sender, msg.value, choice);
+
+      // Envoi des frais
+      if (fee > 0) {
+        (bool ok, ) = payable(feeRecipient).call{value: fee}("");
+        require(ok, "Fee transfer failed");
+      }
+
+
+
+      // Demande VRF (Base Sepolia)
+      requestId = s_vrfCoordinator.requestRandomWords(
+        VRFV2PlusClient.RandomWordsRequest({
+          keyHash: keyHash,
+          subId: s_subscriptionId,
+          requestConfirmations: requestConfirmations,
+          callbackGasLimit: callbackGasLimit,
+          numWords: numWords,
+          extraArgs: VRFV2PlusClient._argsToBytes(
           VRFV2PlusClient.ExtraArgsV1({nativePayment: false})
         )
       })
