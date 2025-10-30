@@ -25,7 +25,7 @@ export default function Home() {
   const [betAmount, setBetAmount] = useState<string>("");
   const [choice, setChoice] = useState<"heads" | "tails" | null>(null);
 
-  const { data: txHash, isPending, writeContract, writeContractAsync, error: writeError, reset } = useWriteContract();
+  const { data: txHash, isPending, writeContractAsync, error: writeError, reset } = useWriteContract();
   const publicClient = usePublicClient();
   const { isLoading: isConfirming, isSuccess: isConfirmed } = useWaitForTransactionReceipt({
     hash: txHash,
