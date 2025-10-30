@@ -16,7 +16,7 @@ import { encodeFunctionData, parseEther } from 'viem';
 
 // ---cut-start---
 const BASE_SEPOLIA_CHAIN_ID = 84532;
-const COUNTER_ADDRESS = process.env.NEXT_PUBLIC_COUNTER_ADDRESS as `0x${string}`;
+const COUNTER_ADDRESS: `0x${string}` = "0x14805a57fC436F390a644fb9897162adD0c36905";
 
 // ABI minimale pour placeBet(bool) payable
 const counterAbi = [
@@ -52,8 +52,20 @@ export default function TransactionComponents() {
     console.log('LifecycleStatus', status);
   }, []);
 
-  return address ? (
-    <div style={{ maxWidth: 420, margin: '0 auto', display: 'grid', gap: 12 }}>
+  return (
+    <div style={{ maxWidth: 520, margin: '24px auto', display: 'grid', gap: 16 }}>
+      {/* Wallet connect always visible at the top */}
+      <div style={{ display: 'flex', justifyContent: 'flex-end' }}>
+        <Wallet>
+          <ConnectWallet>
+            <Avatar className='h-6 w-6' />
+            <Name />
+          </ConnectWallet>
+        </Wallet>
+      </div>
+
+      {address ? (
+        <>
       <label style={{ fontSize: 14 }}>Bet amount (ETH)</label>
       <input
         value={amountEth}
@@ -77,6 +89,7 @@ export default function TransactionComponents() {
         </button>
       </div>
 
+      <div style={{ fontSize: 12, color: '#cfe8ff' }}>Transaction: Place Bet</div>
       <Transaction chainId={BASE_SEPOLIA_CHAIN_ID} calls={calls} onStatus={handleOnStatus}>
         <TransactionButton />
         <TransactionSponsor />
@@ -85,13 +98,10 @@ export default function TransactionComponents() {
           <TransactionStatusAction />
         </TransactionStatus>
       </Transaction>
+        </>
+      ) : (
+        <div style={{ color: '#666', fontSize: 14 }}>Connect your wallet to place a bet.</div>
+      )}
     </div>
-  ) : (
-    <Wallet>
-      <ConnectWallet>
-        <Avatar className='h-6 w-6' />
-        <Name />
-      </ConnectWallet>
-    </Wallet>
   );
 }
