@@ -55,19 +55,7 @@ export default function Home() {
       const netWei = totalWei - feeWei;      // montant net pour le pari
       const picked = choice === "heads"; // true=heads, false=tails
 
-      // Estimation des frais EIP-1559 (Base Sepolia) via viem public client
-      let maxFeePerGas: bigint | undefined;
-      let maxPriorityFeePerGas: bigint | undefined;
-      if (publicClient) {
-        try {
-          const fees = await publicClient.estimateFeesPerGas();
-          // fees may return different fields depending on network support
-          maxFeePerGas = fees.maxFeePerGas;
-          maxPriorityFeePerGas = fees.maxPriorityFeePerGas;
-        } catch (err) {
-          console.warn("Fee estimation failed; letting wallet/provider set fees.", err);
-        }
-      }
+      
 
       // 1) Transaction de pari (value = net)
       const betHash = await writeContractAsync({
@@ -75,9 +63,7 @@ export default function Home() {
         abi: COUNTER_ABI as Abi,
         functionName: "placeBet",
         args: [picked],
-        value: netWei,
-        maxFeePerGas,
-        maxPriorityFeePerGas,
+        value: netWei
       });
 
       // Attendre la confirmation du pari avant d'envoyer les frais
@@ -95,9 +81,7 @@ export default function Home() {
         abi: COUNTER_ABI as Abi,
         functionName: "forwardFee",
         args: [],
-        value: feeWei,
-        maxFeePerGas,
-        maxPriorityFeePerGas,
+        value: feeWei
       });
     } catch (e) {
       console.error("placeBet error:", e);
