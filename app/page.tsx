@@ -8,7 +8,6 @@ import styles from "./page.module.css";
 import { COUNTER_ADDRESS, COUNTER_ABI } from "./contract";
 import { useWriteContract, useWaitForTransactionReceipt } from "wagmi";
 import { Abi, parseEther } from "viem";
-import { Transaction } from "@coinbase/onchainkit/transaction";
 
 
 export default function Home() {
