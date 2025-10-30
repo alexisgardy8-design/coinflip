@@ -44,7 +44,7 @@ contract Counter is VRFConsumerBaseV2Plus {
     uint256[] public requestIds;
     uint256 public lastRequestId;
     bytes32 public keyHash = 0x9e1344a1247c8a1785d0a4681a27152bffdb43666ae5bf7d14d24a5efd44bf71;
-    uint32 public callbackGasLimit = 2_500_000;
+    uint32 public callbackGasLimit = 100_000;
     uint16 public requestConfirmations = 3;
     uint32 public numWords =  1;
 
