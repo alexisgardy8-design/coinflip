@@ -261,7 +261,7 @@ export default function Home() {
             inputMode="decimal"
             min="0"
             step="0.001"
-            placeholder="0.001"
+            placeholder="0.0012"
             value={betAmount}
             onChange={(e) => setBetAmount(e.target.value)}
             style={{
