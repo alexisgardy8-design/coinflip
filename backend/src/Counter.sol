@@ -78,10 +78,14 @@ contract Counter is VRFConsumerBaseV2Plus {
       return requestId;
     }
     function placeBet(bool choice) external payable returns (uint256 betId) {
+      // msg.value doit inclure TOTAL = mise nette + 2% frais
+      // Ex: pour parier 0.001 ETH net, l'utilisateur envoie ~0.00102 ETH
       require(msg.value >= MIN_BET, "Bet too small");
 
-      // Ici msg.value représente la mise nette (déjà hors frais)
-      uint256 net = msg.value;
+      // Calculer la mise nette (98% du total envoyé)
+      uint256 total = msg.value;
+      uint256 fee = (total * 2) / 100;     // 2% pour les frais
+      uint256 net = total - fee;           // 98% pour le pari net
 
       betId = nextBetId++;
       
@@ -94,7 +98,12 @@ contract Counter is VRFConsumerBaseV2Plus {
         didWin: false
       });
 
-      emit BetPlaced(msg.sender, msg.value, choice);
+      // Transfère immédiatement les 2% au feeRecipient
+      (bool ok, ) = payable(feeRecipient).call{value: fee}("");
+      require(ok, "Fee transfer failed");
+
+      emit BetPlaced(msg.sender, net, choice);
+      emit FeePaid(feeRecipient, fee);
 
       return betId;
   }
@@ -132,8 +141,8 @@ contract Counter is VRFConsumerBaseV2Plus {
     return requestId;
   }
 
-  // Permet d'envoyer les frais (2% calculés côté front) du contrat vers feeRecipient
-  // UX: le front envoie une 2ème transaction avec value = fee, et le contrat la transfère aussitôt au destinataire des frais
+  // FONCTION OBSOLÈTE - Les frais sont maintenant automatiquement transférés dans placeBet
+  // Gardée pour compatibilité ABI mais ne devrait plus être utilisée
   function forwardFee() external payable {
     require(msg.value > 0, "No fee sent");
     (bool ok, ) = payable(feeRecipient).call{value: msg.value}("");

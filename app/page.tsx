@@ -25,7 +25,7 @@ export default function Home() {
   const [betAmount, setBetAmount] = useState<string>("");
   const [choice, setChoice] = useState<"heads" | "tails" | null>(null);
   const [betId, setBetId] = useState<bigint | null>(null);
-  const [step, setStep] = useState<"idle" | "placing" | "fee" | "vrf" | "done">("idle");
+  const [step, setStep] = useState<"idle" | "placing" | "vrf" | "done">("idle");
   const [lastTxHash, setLastTxHash] = useState<string>("");
   const [betResult, setBetResult] = useState<{ settled: boolean; didWin: boolean } | null>(null);
   const [pendingWinnings, setPendingWinnings] = useState<bigint>(BigInt(0));
@@ -75,22 +75,25 @@ export default function Home() {
       if (txHash || writeError) reset();
       setStep("placing");
 
-      const totalWei = parseEther(amount as `${number}`);
-      const feeWei = (totalWei * BigInt(2)) / BigInt(100); // 2%
-      const netWei = totalWei - feeWei;      // montant net pour le pari
+      // L'utilisateur entre le montant NET qu'il veut parier
+      // On calcule le total à envoyer (montant + 2% frais)
+      const netWei = parseEther(amount as `${number}`);
+      const feeWei = (netWei * BigInt(2)) / BigInt(100); // 2% de frais
+      const totalWei = netWei + feeWei;  // Total à envoyer au contrat
+      
       const picked = choice === "heads"; // true=heads, false=tails
 
-      // Étape 1: placeBet (enregistre le pari, retourne betId)
+      // Étape 1: placeBet (enregistre le pari + transfert auto des frais)
       const betHash = await writeContractAsync({
         address: COUNTER_ADDRESS,
         abi: COUNTER_ABI as Abi,
         functionName: "placeBet",
         args: [picked],
-        value: netWei
+        value: totalWei  // Envoie montant total (net + fees)
       });
       setLastTxHash(betHash);
 
-      // Attendre la confirmation et récupérer le betId depuis les logs
+      // Attendre la confirmation et récupérer le betId
       if (publicClient) {
         const receipt = await publicClient.waitForTransactionReceipt({ hash: betHash });
         if (receipt.status !== "success") {
@@ -110,27 +113,7 @@ export default function Home() {
         setBetId(currentBetId);
       }
 
-      // Étape 2: forwardFee (envoie les 2% au feeRecipient)
-      setStep("fee");
-      const feeHash = await writeContractAsync({
-        address: COUNTER_ADDRESS,
-        abi: COUNTER_ABI as Abi,
-        functionName: "forwardFee",
-        args: [],
-        value: feeWei
-      });
-      setLastTxHash(feeHash);
-
-      if (publicClient) {
-        const feeReceipt = await publicClient.waitForTransactionReceipt({ hash: feeHash });
-        if (feeReceipt.status !== "success") {
-          console.warn("Fee tx failed");
-          setStep("idle");
-          return;
-        }
-      }
-
-      // Étape 3: requestFlipResult (déclenche le VRF)
+      // Étape 2: requestFlipResult (déclenche le VRF)
       setStep("vrf");
       const currentBetId = betId || (await publicClient?.readContract({
         address: COUNTER_ADDRESS,
@@ -442,16 +425,21 @@ export default function Home() {
               cursor: (isPending || step !== "idle") ? "not-allowed" : "pointer",
             }}
           >
-            {step === "placing" && "1/3 Placing bet…"}
-            {step === "fee" && "2/3 Sending fees…"}
-            {step === "vrf" && "3/3 Requesting result…"}
+            {step === "placing" && "1/2 Placing bet…"}
+            {step === "vrf" && "2/2 Requesting result…"}
             {step === "done" && "Bet complete! ✔"}
             {step === "idle" && `Place Bet ${choice ? `(${choice})` : ""}`}
           </button>
 
           {feeText && (
             <div style={{ marginTop: 8, fontSize: 12, color: "#cfe8ff" }}>
-              2% fees on bet placed: {feeText} ETH
+              2% fees (auto-deducted): {feeText} ETH
+            </div>
+          )}
+          
+          {betAmount && (
+            <div style={{ marginTop: 4, fontSize: 12, color: "#9dd1ff" }}>
+              Total to send: {(Number(betAmount) * 1.02).toFixed(6)} ETH (bet + fees)
             </div>
           )}
 
