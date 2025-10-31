@@ -27,7 +27,7 @@ export default function Home() {
   const [betId, setBetId] = useState<bigint | null>(null);
   const [step, setStep] = useState<"idle" | "placing" | "vrf" | "done">("idle");
   const [lastTxHash, setLastTxHash] = useState<string>("");
-  const [betResult, setBetResult] = useState<{ settled: boolean; didWin: boolean } | null>(null);
+  const [betResult, setBetResult] = useState<{ settled: boolean; didWin: boolean; result: string } | null>(null);
   const [pendingWinnings, setPendingWinnings] = useState<bigint>(BigInt(0));
   const [isCheckingResult, setIsCheckingResult] = useState(false);
   const [fundAmount, setFundAmount] = useState<string>("");
@@ -158,10 +158,16 @@ export default function Home() {
         args: [checkBetId]
       }) as [string, boolean, bigint, boolean, boolean]; // [player, choice, betNet, settled, didWin]
 
-      const [player, , , settled, didWin] = flip;
+      const [player, choice, , settled, didWin] = flip;
       
       if (settled) {
-        setBetResult({ settled, didWin });
+        // Récupérer le résultat VRF pour l'afficher
+        const result = choice ? "Heads" : "Tails"; // choice du joueur
+        
+        // Le résultat réel du VRF est l'inverse si le joueur a perdu, sinon pareil
+        const vrfResult = didWin ? result : (choice ? "Tails" : "Heads");
+        
+        setBetResult({ settled, didWin, result: vrfResult });
         
         // Si gagné, vérifier les gains en attente
         if (didWin && publicClient) {
@@ -518,12 +524,15 @@ export default function Home() {
               border: betResult.didWin ? "1px solid #1a7a3e" : "1px solid #7a1a1a"
             }}>
               <div style={{ fontSize: 16, marginBottom: 8, fontWeight: 700 }}>
-                {betResult.didWin ? "🎉 YOU WON!" : "😔 You Lost"}
+                {betResult.didWin ? "🎉 YOU WON!" : "😔 YOU LOST"}
+              </div>
+              <div style={{ fontSize: 14, color: "#ffd700", marginBottom: 8, fontWeight: 600 }}>
+                🪙 Result: {betResult.result}
               </div>
               <div style={{ fontSize: 13, color: "#cfe8ff", marginBottom: 8 }}>
                 {betResult.didWin 
-                  ? `Congratulations! You can claim your winnings.`
-                  : `Better luck next time!`
+                  ? `The coin landed on ${betResult.result}. You can claim your winnings below!`
+                  : `The coin landed on ${betResult.result}. Better luck next time!`
                 }
               </div>
               
@@ -554,6 +563,7 @@ export default function Home() {
               
               <button
                 onClick={() => {
+                  // Reset complet de tous les états
                   setStep("idle");
                   setBetId(null);
                   setLastTxHash("");
@@ -561,6 +571,7 @@ export default function Home() {
                   setChoice(null);
                   setBetResult(null);
                   setPendingWinnings(BigInt(0));
+                  setIsCheckingResult(false);
                   reset();
                 }}
                 style={{
