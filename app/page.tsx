@@ -50,6 +50,17 @@ export default function Home() {
     const amount = betAmount?.trim();
     if (!amount) return;
     
+    // ✅ VALIDATION: MIN_BET et MAX_BET
+    const amountNum = parseFloat(amount);
+    if (amountNum < 0.001) {
+      alert("Minimum bet is 0.001 ETH");
+      return;
+    }
+    if (amountNum > 1) {
+      alert("Maximum bet is 1 ETH");
+      return;
+    }
+    
     try {
       // Reset previous state if any
       if (txHash || writeError) reset();
