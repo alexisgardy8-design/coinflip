@@ -3,9 +3,11 @@ pragma solidity ^0.8.20;
 
 import {VRFConsumerBaseV2Plus} from "@chainlink/contracts/src/v0.8/vrf/dev/VRFConsumerBaseV2Plus.sol";
 import {VRFV2PlusClient} from "@chainlink/contracts/src/v0.8/vrf/dev/libraries/VRFV2PlusClient.sol";
+import {Pausable} from "@openzeppelin/contracts/utils/Pausable.sol";
 
 
-contract Counter is VRFConsumerBaseV2Plus {
+contract Counter is VRFConsumerBaseV2Plus, Pausable {
+    address private immutable i_admin; // Admin pour pause/unpause et gestion
     uint256 public number;
     event RequestSent(uint256 requestId, uint32 numWords);
     event RequestFulfilled(uint256 requestId, uint256[] randomWords);
@@ -23,7 +25,9 @@ contract Counter is VRFConsumerBaseV2Plus {
     mapping(uint256 => RequestStatus) public s_requests; 
   
     uint256 public constant MIN_BET = 0.001 ether;
-    address public immutable feeRecipient;
+    uint256 public constant MAX_BET = 1 ether; // Limite d'exposition par pari
+    uint256 public constant BET_TIMEOUT = 1 hours; // Délai pour annulation d'urgence
+    address public feeRecipient; // Modifiable par owner
 
     struct Flip {
       address player;
@@ -31,12 +35,14 @@ contract Counter is VRFConsumerBaseV2Plus {
       uint256 betNet;   // mise nette
       bool settled;
       bool didWin;
+      uint256 timestamp; // Pour timeout cancellation
     }
 
     mapping(uint256 => Flip) public flips;              // betId => Flip
     mapping(uint256 => uint256) public requestToBet;    // requestId => betId
     mapping(address => uint256) public pendingWinnings; // joueur => gains à récupérer
     mapping(uint256 => uint256) private betFees;        // betId => frais (2%) à envoyer après settlement
+    mapping(uint256 => bool) public betHasPendingRequest; // betId => hasActiveRequest (protection double request)
    
     uint256 public nextBetId = 1;
 
@@ -52,9 +58,21 @@ contract Counter is VRFConsumerBaseV2Plus {
     uint16 public requestConfirmations = 3;
     uint32 public numWords =  1;
 
-    constructor( uint256 subscriptionId, address _feeRecipiant) VRFConsumerBaseV2Plus(0x5C210eF41CD1a72de73bF76eC39637bB0d3d7BEE) {
+    modifier onlyAdmin() {
+        require(msg.sender == i_admin, "Not admin");
+        _;
+    }
+
+    constructor( uint256 subscriptionId, address _feeRecipiant) 
+        VRFConsumerBaseV2Plus(0x5C210eF41CD1a72de73bF76eC39637bB0d3d7BEE)
+    {
+        i_admin = msg.sender;
         s_subscriptionId = subscriptionId;
         feeRecipient = _feeRecipiant;
+    }
+
+    function admin() public view returns (address) {
+        return i_admin;
     }
 
 
@@ -76,25 +94,30 @@ contract Counter is VRFConsumerBaseV2Plus {
       emit RequestSent(requestId, numWords);
       return requestId;
     }
-    function placeBet(bool choice) external payable returns (uint256 betId) {
+    function placeBet(bool choice) external payable whenNotPaused returns (uint256 betId) {
       require(msg.value >= MIN_BET, "Bet too small");
+      require(msg.value <= MAX_BET, "Bet too large"); // Protection exposition
 
       betId = nextBetId++;
       
       // Calculer 98% pour le pari, 2% pour les frais
       uint256 fee = (msg.value * 2) / 100;       // 2% de frais
       uint256 betNet = msg.value - fee;          // 98% pour le pari
-      
+      uint256 potentialPayout = betNet * 2;
       // Stocker les frais pour ce bet (seront envoyés après settlement)
       betFees[betId] = fee;
+
+       // ✅ CRITIQUE : Vérifier que le contrat peut payer
+    require(address(this).balance >= potentialPayout, "Insufficient contract balance");
       
-      // Enregistre le pari avec la mise nette (98%)
+      // Enregistre le pari avec la mise nette (98%) et timestamp
       flips[betId] = Flip({
         player: msg.sender,
         choice: choice,
         betNet: betNet,
         settled: false,
-        didWin: false
+        didWin: false,
+        timestamp: block.timestamp
       });
 
       emit BetPlaced(msg.sender, betNet, choice);
@@ -103,11 +126,14 @@ contract Counter is VRFConsumerBaseV2Plus {
   }
 
   // Nouvelle fonction: déclenche le VRF pour un pari existant
-  function requestFlipResult(uint256 betId) external returns (uint256 requestId) {
+  function requestFlipResult(uint256 betId) external whenNotPaused returns (uint256 requestId) {
     Flip storage f = flips[betId];
     require(f.player != address(0), "Bet does not exist");
     require(f.player == msg.sender, "Not your bet");
     require(!f.settled, "Already settled");
+    require(!betHasPendingRequest[betId], "Request already pending"); // Protection double request
+
+    betHasPendingRequest[betId] = true; // Marquer comme en cours
 
     // Demande VRF (Base Sepolia) financé par LINK
     requestId = s_vrfCoordinator.requestRandomWords(
@@ -147,6 +173,8 @@ contract Counter is VRFConsumerBaseV2Plus {
     Flip storage f = flips[betId];
     
     if (f.player != address(0) && !f.settled) {
+        betHasPendingRequest[betId] = false; // Libérer le flag après settlement
+        
         uint256 word = _randomWords[0];
         bool flipSide = (word % 2 == 0);
         bool didWin = (flipSide == f.choice);
@@ -196,6 +224,46 @@ contract Counter is VRFConsumerBaseV2Plus {
     emit PayoutSent(msg.sender, amount);
     
     return amount;
+  }
+
+  // 🛡️ SÉCURITÉ OPTIONNELLE: Annulation d'urgence si VRF timeout
+  function cancelBetAfterTimeout(uint256 betId) external {
+    Flip storage f = flips[betId];
+    require(f.player == msg.sender, "Not your bet");
+    require(!f.settled, "Already settled");
+    require(block.timestamp >= f.timestamp + BET_TIMEOUT, "Timeout not reached");
+    
+    // Rembourser bet + frais à l'utilisateur
+    uint256 refundAmount = f.betNet + betFees[betId];
+    f.settled = true; // Marquer comme settled pour éviter double refund
+    betHasPendingRequest[betId] = false; // Libérer le flag
+    betFees[betId] = 0; // Clear fees
+    
+    (bool success, ) = payable(msg.sender).call{value: refundAmount}("");
+    require(success, "Refund failed");
+  }
+
+  // 🛡️ SÉCURITÉ OPTIONNELLE: Admin peut mettre en pause en cas d'urgence
+  function pause() external onlyAdmin {
+    _pause();
+  }
+
+  function unpause() external onlyAdmin {
+    _unpause();
+  }
+
+  // 🛡️ SÉCURITÉ OPTIONNELLE: Admin peut modifier le feeRecipient
+  function updateFeeRecipient(address newRecipient) external onlyAdmin {
+    require(newRecipient != address(0), "Invalid address");
+    feeRecipient = newRecipient;
+  }
+
+  // 🛡️ SÉCURITÉ OPTIONNELLE: Admin peut retirer les fonds en cas d'urgence (après pause)
+  function emergencyWithdraw() external onlyAdmin {
+    require(paused(), "Must be paused first");
+    uint256 balance = address(this).balance;
+    (bool success, ) = payable(i_admin).call{value: balance}("");
+    require(success, "Withdraw failed");
   }
 
   function isWinner(uint256 randomWord, bool choice) public pure returns (bool) {
