@@ -41,13 +41,15 @@ contract Counter is VRFConsumerBaseV2Plus {
    
     uint256 public nextBetId = 1;
 
-    uint256 public s_subscriptionId = 4937410816868527569599478232880574948340571343081385903828113851362140503943;
+    uint256 public s_subscriptionId;
     uint256[] public requestIds;
     uint256 public lastRequestId;
-    // Base Sepolia key hash pour 500 gwei gas lane
+    // Base Sepolia key hash pour 500 gwei gas lane (doc Chainlink confirmé)
     bytes32 public keyHash = 0x9e1344a1247c8a1785d0a4681a27152bffdb43666ae5bf7d14d24a5efd44bf71;
-    // callbackGasLimit augmenté pour assurer l'exécution (coût: ~0.003 LINK par request)
-    uint32 public callbackGasLimit = 500_000;
+    // callbackGasLimit: Max recommandé 2.5M pour éviter out-of-gas dans fulfillment
+    // Coût avec LINK: ~0.01 LINK par request sur Base Sepolia
+    uint32 public callbackGasLimit = 2_500_000;
+    // 3 confirmations = bon équilibre sécurité/vitesse (max 200)
     uint16 public requestConfirmations = 3;
     uint32 public numWords =  1;
 
