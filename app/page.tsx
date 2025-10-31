@@ -1,6 +1,5 @@
 "use client";
 import { useEffect, useState } from "react";
-import Image from "next/image";
 import { Wallet } from "@coinbase/onchainkit/wallet";
 import { useMiniKit } from "@coinbase/onchainkit/minikit";
 // import { useQuickAuth } from "@coinbase/onchainkit/minikit";
@@ -30,8 +29,6 @@ export default function Home() {
   const [betResult, setBetResult] = useState<{ settled: boolean; didWin: boolean; result: string } | null>(null);
   const [pendingWinnings, setPendingWinnings] = useState<bigint>(BigInt(0));
   const [isCheckingResult, setIsCheckingResult] = useState(false);
-  const [fundAmount, setFundAmount] = useState<string>("");
-  const [contractBalance, setContractBalance] = useState<bigint>(BigInt(0));
 
   const { data: txHash, isPending, writeContractAsync, error: writeError, reset } = useWriteContract();
   const publicClient = usePublicClient();
@@ -41,25 +38,6 @@ export default function Home() {
       setMiniAppReady();
     }
   }, [setMiniAppReady, isMiniAppReady]);
-
-  useEffect(() => {
-    // Charger le solde du contrat au montage
-    const loadContractBalance = async () => {
-      if (publicClient) {
-        try {
-          const balance = await publicClient.readContract({
-            address: COUNTER_ADDRESS,
-            abi: COUNTER_ABI as Abi,
-            functionName: "getContractBalance"
-          }) as bigint;
-          setContractBalance(balance);
-        } catch (e) {
-          console.error("Error loading contract balance:", e);
-        }
-      }
-    };
-    loadContractBalance();
-  }, [publicClient]);
 
   const onSelect = (c: "heads" | "tails") => {
     setChoice(c);
@@ -204,38 +182,6 @@ export default function Home() {
       }
     } catch (e) {
       console.error("Payout error:", e);
-    }
-  };
-
-  const onFundContract = async () => {
-    if (!publicClient) return;
-    const amount = fundAmount?.trim();
-    if (!amount) return;
-    
-    try {
-      const fundHash = await writeContractAsync({
-        address: COUNTER_ADDRESS,
-        abi: COUNTER_ABI as Abi,
-        functionName: "fundContract",
-        args: [],
-        value: parseEther(amount as `${number}`)
-      });
-      setLastTxHash(fundHash);
-
-      const receipt = await publicClient.waitForTransactionReceipt({ hash: fundHash });
-      if (receipt.status === "success") {
-        // Recharger le solde du contrat
-        const balance = await publicClient.readContract({
-          address: COUNTER_ADDRESS,
-          abi: COUNTER_ABI as Abi,
-          functionName: "getContractBalance"
-        }) as bigint;
-        setContractBalance(balance);
-        setFundAmount("");
-        alert("Contract funded successfully! 💰");
-      }
-    } catch (e) {
-      console.error("Fund contract error:", e);
     }
   };
 
