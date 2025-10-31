@@ -109,25 +109,18 @@ export default function Home() {
         
         const currentBetId = nextBetIdFromContract - BigInt(1);
         setBetId(currentBetId);
-      }
+        
+        // Étape 2: requestFlipResult (déclenche le VRF)
+        setStep("vrf");
+        
+        const vrfHash = await writeContractAsync({
+          address: COUNTER_ADDRESS,
+          abi: COUNTER_ABI as Abi,
+          functionName: "requestFlipResult",
+          args: [currentBetId]
+        });
+        setLastTxHash(vrfHash);
 
-      // Étape 2: requestFlipResult (déclenche le VRF)
-      setStep("vrf");
-      const currentBetId = betId || (await publicClient?.readContract({
-        address: COUNTER_ADDRESS,
-        abi: COUNTER_ABI as Abi,
-        functionName: "nextBetId"
-      }) as bigint) - BigInt(1);
-
-      const vrfHash = await writeContractAsync({
-        address: COUNTER_ADDRESS,
-        abi: COUNTER_ABI as Abi,
-        functionName: "requestFlipResult",
-        args: [currentBetId]
-      });
-      setLastTxHash(vrfHash);
-
-      if (publicClient) {
         const vrfReceipt = await publicClient.waitForTransactionReceipt({ hash: vrfHash });
         if (vrfReceipt.status === "success") {
           setStep("done");
