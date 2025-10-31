@@ -98,6 +98,7 @@ contract Counter is VRFConsumerBaseV2Plus {
   // Nouvelle fonction: déclenche le VRF pour un pari existant
   function requestFlipResult(uint256 betId) external returns (uint256 requestId) {
     Flip storage f = flips[betId];
+    require(f.player != address(0), "Bet does not exist");
     require(f.player == msg.sender, "Not your bet");
     require(!f.settled, "Already settled");
 
@@ -189,7 +190,19 @@ contract Counter is VRFConsumerBaseV2Plus {
         return (coinFlipResult == choice);
     }
 
+  // Fonction pour fund le contrat afin de payer les gains des joueurs
+  function fundContract() external payable {
+    require(msg.value > 0, "Must send ETH to fund");
+    emit ContractFunded(msg.sender, msg.value);
+  }
 
+  // Fonction pour vérifier le solde du contrat
+  function getContractBalance() external view returns (uint256) {
+    return address(this).balance;
+  }
+
+  // Événement pour tracker les dépôts
+  event ContractFunded(address indexed funder, uint256 amount);
 
   // Admin or internal functions only — no public state-changing APIs other than placeBet/getPayout
 }

@@ -30,6 +30,8 @@ export default function Home() {
   const [betResult, setBetResult] = useState<{ settled: boolean; didWin: boolean } | null>(null);
   const [pendingWinnings, setPendingWinnings] = useState<bigint>(BigInt(0));
   const [isCheckingResult, setIsCheckingResult] = useState(false);
+  const [fundAmount, setFundAmount] = useState<string>("");
+  const [contractBalance, setContractBalance] = useState<bigint>(BigInt(0));
 
   const { data: txHash, isPending, writeContractAsync, error: writeError, reset } = useWriteContract();
   const publicClient = usePublicClient();
@@ -39,6 +41,25 @@ export default function Home() {
       setMiniAppReady();
     }
   }, [setMiniAppReady, isMiniAppReady]);
+
+  useEffect(() => {
+    // Charger le solde du contrat au montage
+    const loadContractBalance = async () => {
+      if (publicClient) {
+        try {
+          const balance = await publicClient.readContract({
+            address: COUNTER_ADDRESS,
+            abi: COUNTER_ABI as Abi,
+            functionName: "getContractBalance"
+          }) as bigint;
+          setContractBalance(balance);
+        } catch (e) {
+          console.error("Error loading contract balance:", e);
+        }
+      }
+    };
+    loadContractBalance();
+  }, [publicClient]);
 
   const onSelect = (c: "heads" | "tails") => {
     setChoice(c);
@@ -205,6 +226,38 @@ export default function Home() {
     }
   };
 
+  const onFundContract = async () => {
+    if (!publicClient) return;
+    const amount = fundAmount?.trim();
+    if (!amount) return;
+    
+    try {
+      const fundHash = await writeContractAsync({
+        address: COUNTER_ADDRESS,
+        abi: COUNTER_ABI as Abi,
+        functionName: "fundContract",
+        args: [],
+        value: parseEther(amount as `${number}`)
+      });
+      setLastTxHash(fundHash);
+
+      const receipt = await publicClient.waitForTransactionReceipt({ hash: fundHash });
+      if (receipt.status === "success") {
+        // Recharger le solde du contrat
+        const balance = await publicClient.readContract({
+          address: COUNTER_ADDRESS,
+          abi: COUNTER_ABI as Abi,
+          functionName: "getContractBalance"
+        }) as bigint;
+        setContractBalance(balance);
+        setFundAmount("");
+        alert("Contract funded successfully! 💰");
+      }
+    } catch (e) {
+      console.error("Fund contract error:", e);
+    }
+  };
+
   // 2% of the entered bet in ETH (display only)
   const feeText = (() => {
     if (!betAmount) return null;
@@ -248,6 +301,63 @@ export default function Home() {
           >
             View on Basescan (Base Sepolia)
           </a>
+          <div style={{ marginTop: 12, fontSize: 14, color: "#9dd1ff" }}>
+            Contract Balance: {(Number(contractBalance) / 1e18).toFixed(4)} ETH
+          </div>
+        </div>
+
+        {/* Fund Contract Section */}
+        <div style={{
+          marginTop: 16,
+          marginBottom: 24,
+          width: "100%",
+          maxWidth: 420,
+          border: "1px solid #12406a",
+          borderRadius: 12,
+          padding: 16,
+          background: "#0b2e50",
+          color: "#fff",
+        }}>
+          <h2 style={{ margin: 0, marginBottom: 12, fontSize: 18 }}>Fund Contract 💰</h2>
+          <p style={{ fontSize: 13, color: "#cfe8ff", marginBottom: 12 }}>
+            Add ETH to the contract to pay winners
+          </p>
+          <input
+            type="number"
+            inputMode="decimal"
+            min="0"
+            step="0.01"
+            placeholder="Amount in ETH"
+            value={fundAmount}
+            onChange={(e) => setFundAmount(e.target.value)}
+            style={{
+              width: "100%",
+              height: 44,
+              borderRadius: 8,
+              border: "1px solid #12406a",
+              background: "#0e355b",
+              color: "#fff",
+              padding: "0 12px",
+              outline: "none",
+              marginBottom: 12,
+            }}
+          />
+          <button
+            onClick={onFundContract}
+            disabled={isPending || !fundAmount}
+            style={{
+              width: "100%",
+              height: 44,
+              borderRadius: 8,
+              border: "1px solid #12406a",
+              background: (isPending || !fundAmount) ? "#0e355b" : "#1a7a3e",
+              color: "#fff",
+              fontWeight: 700,
+              cursor: (isPending || !fundAmount) ? "not-allowed" : "pointer",
+            }}
+          >
+            {isPending ? "Funding..." : "Fund Contract"}
+          </button>
         </div>
 
         <div style={{
