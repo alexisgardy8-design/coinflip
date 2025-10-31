@@ -29,6 +29,7 @@ export default function Home() {
   const [betResult, setBetResult] = useState<{ settled: boolean; didWin: boolean; result: string } | null>(null);
   const [pendingWinnings, setPendingWinnings] = useState<bigint>(BigInt(0));
   const [isCheckingResult, setIsCheckingResult] = useState(false);
+  const [checkAttempts, setCheckAttempts] = useState(0);
 
   const { data: txHash, isPending, writeContractAsync, error: writeError, reset } = useWriteContract();
   const publicClient = usePublicClient();
@@ -48,10 +49,12 @@ export default function Home() {
     if (!choice) return;
     const amount = betAmount?.trim();
     if (!amount) return;
+    
     try {
       // Reset previous state if any
       if (txHash || writeError) reset();
       setStep("placing");
+      setCheckAttempts(0);
 
       // L'utilisateur entre un montant, on envoie seulement 98% (2% = frais de support)
       const desiredAmountWei = parseEther(amount as `${number}`);
@@ -116,9 +119,22 @@ export default function Home() {
     }
   };
 
-  const checkBetResult = async (checkBetId: bigint) => {
+  const checkBetResult = async (checkBetId: bigint, attempt: number = 0) => {
     if (!publicClient) return;
+    
+    // Timeout après 24 tentatives (2 minutes à 5s par tentative)
+    const MAX_ATTEMPTS = 24;
+    
+    if (attempt >= MAX_ATTEMPTS) {
+      console.warn("VRF timeout - max attempts reached");
+      setIsCheckingResult(false);
+      setStep("idle");
+      // Permettre à l'utilisateur de réessayer manuellement
+      return;
+    }
+    
     setIsCheckingResult(true);
+    setCheckAttempts(attempt + 1);
     
     try {
       // Vérifier le statut du pari
@@ -153,13 +169,15 @@ export default function Home() {
         }
         
         setIsCheckingResult(false);
+        setCheckAttempts(0);
       } else {
         // Pas encore résolu, réessayer dans 5 secondes
-        setTimeout(() => checkBetResult(checkBetId), 5000);
+        setTimeout(() => checkBetResult(checkBetId, attempt + 1), 5000);
       }
     } catch (e) {
       console.error("Error checking bet result:", e);
       setIsCheckingResult(false);
+      setCheckAttempts(0);
     }
   };
 
@@ -480,8 +498,86 @@ export default function Home() {
               </div>
               {isCheckingResult && (
                 <div style={{ fontSize: 12, color: "#8b5cf6", marginTop: 8 }}>
-                  🔄 Checking result...
+                  🔄 Checking result... (Attempt {checkAttempts}/24)
                 </div>
+              )}
+              {checkAttempts >= 24 && !isCheckingResult && (
+                <>
+                  <div style={{ 
+                    fontSize: 13, 
+                    color: "#fbbf24", 
+                    marginTop: 12,
+                    padding: 12,
+                    background: "rgba(251, 191, 36, 0.1)",
+                    borderRadius: 8,
+                    border: "1px solid rgba(251, 191, 36, 0.3)"
+                  }}>
+                    ⚠️ VRF taking longer than expected. Check back later or try manually.
+                  </div>
+                  <button
+                    onClick={() => {
+                      if (betId) {
+                        setCheckAttempts(0);
+                        checkBetResult(betId, 0);
+                      }
+                    }}
+                    style={{
+                      marginTop: 12,
+                      width: "100%",
+                      height: 40,
+                      borderRadius: 8,
+                      border: "2px solid #8b5cf6",
+                      background: "rgba(139, 92, 246, 0.1)",
+                      color: "#8b5cf6",
+                      fontWeight: 600,
+                      cursor: "pointer",
+                      transition: "all 0.2s ease",
+                    }}
+                    onMouseEnter={(e) => {
+                      e.currentTarget.style.background = "rgba(139, 92, 246, 0.2)";
+                    }}
+                    onMouseLeave={(e) => {
+                      e.currentTarget.style.background = "rgba(139, 92, 246, 0.1)";
+                    }}
+                  >
+                    🔄 Check Result Again
+                  </button>
+                  <button
+                    onClick={() => {
+                      // Permettre nouveau bet
+                      setStep("idle");
+                      setBetId(null);
+                      setLastTxHash("");
+                      setBetAmount("");
+                      setChoice(null);
+                      setBetResult(null);
+                      setPendingWinnings(BigInt(0));
+                      setIsCheckingResult(false);
+                      setCheckAttempts(0);
+                      reset();
+                    }}
+                    style={{
+                      marginTop: 8,
+                      width: "100%",
+                      height: 40,
+                      borderRadius: 8,
+                      border: "2px solid #ef4444",
+                      background: "rgba(239, 68, 68, 0.1)",
+                      color: "#ef4444",
+                      fontWeight: 600,
+                      cursor: "pointer",
+                      transition: "all 0.2s ease",
+                    }}
+                    onMouseEnter={(e) => {
+                      e.currentTarget.style.background = "rgba(239, 68, 68, 0.2)";
+                    }}
+                    onMouseLeave={(e) => {
+                      e.currentTarget.style.background = "rgba(239, 68, 68, 0.1)";
+                    }}
+                  >
+                    ❌ Cancel & Place New Bet
+                  </button>
+                </>
               )}
             </div>
           )}
@@ -573,6 +669,7 @@ export default function Home() {
                   setBetResult(null);
                   setPendingWinnings(BigInt(0));
                   setIsCheckingResult(false);
+                  setCheckAttempts(0);
                   reset();
                 }}
                 style={{
