@@ -24,6 +24,12 @@ export default function Home() {
 
   const [betAmount, setBetAmount] = useState<string>("");
   const [choice, setChoice] = useState<"heads" | "tails" | null>(null);
+  const [betId, setBetId] = useState<bigint | null>(null);
+  const [step, setStep] = useState<"idle" | "placing" | "fee" | "vrf" | "done">("idle");
+  const [lastTxHash, setLastTxHash] = useState<string>("");
+  const [betResult, setBetResult] = useState<{ settled: boolean; didWin: boolean } | null>(null);
+  const [pendingWinnings, setPendingWinnings] = useState<bigint>(BigInt(0));
+  const [isCheckingResult, setIsCheckingResult] = useState(false);
 
   const { data: txHash, isPending, writeContractAsync, error: writeError, reset } = useWriteContract();
   const publicClient = usePublicClient();
@@ -49,15 +55,14 @@ export default function Home() {
     try {
       // Reset previous state if any
       if (txHash || writeError) reset();
+      setStep("placing");
 
       const totalWei = parseEther(amount as `${number}`);
       const feeWei = (totalWei * BigInt(2)) / BigInt(100); // 2%
       const netWei = totalWei - feeWei;      // montant net pour le pari
       const picked = choice === "heads"; // true=heads, false=tails
 
-      
-
-      // 1) Transaction de pari (value = net)
+      // Étape 1: placeBet (enregistre le pari, retourne betId)
       const betHash = await writeContractAsync({
         address: COUNTER_ADDRESS,
         abi: COUNTER_ABI as Abi,
@@ -65,26 +70,156 @@ export default function Home() {
         args: [picked],
         value: netWei
       });
+      setLastTxHash(betHash);
 
-      // Attendre la confirmation du pari avant d'envoyer les frais
+      // Attendre la confirmation et récupérer le betId depuis les logs
       if (publicClient) {
         const receipt = await publicClient.waitForTransactionReceipt({ hash: betHash });
         if (receipt.status !== "success") {
-          console.warn("Bet tx did not succeed; skipping fee forwarding.");
+          console.warn("Bet tx failed");
+          setStep("idle");
           return;
         }
+
+        // Le contrat retourne betId, on peut le lire depuis les logs ou utiliser la valeur de retour
+        // Pour simplifier, on va appeler le contrat pour récupérer nextBetId - 1
+        // Alternativement, décoder les logs ou utiliser une approche différente
+        // Ici on suppose que placeBet retourne betId dans la valeur de retour (nécessite ethers ou cast)
+        // Pour l'instant, on va utiliser une approche simple: récupérer depuis les logs BetPlaced
+        
+        const betPlacedLog = receipt.logs.find((log) => {
+          try {
+            return log.topics[0] === "0x4a3f6f8a3b88c725055f2ff0a3b1b7e4c3e0c62f6b1d9c8e7f6a5b4c3d2e1f0"; // placeholder, besoin du vrai topic
+          } catch {
+            return false;
+          }
+        });
+        
+        // Pour simplifier et éviter le parsing complexe, on va stocker betId côté frontend
+        // Utilisons nextBetId du contrat - 1 comme betId actuel
+        const nextBetIdFromContract = await publicClient.readContract({
+          address: COUNTER_ADDRESS,
+          abi: COUNTER_ABI as Abi,
+          functionName: "nextBetId"
+        }) as bigint;
+        
+        const currentBetId = nextBetIdFromContract - BigInt(1);
+        setBetId(currentBetId);
       }
 
-      // 2) Transaction des frais (value = fee) : le contrat renvoie immédiatement vers feeRecipient
-      await writeContractAsync({
+      // Étape 2: forwardFee (envoie les 2% au feeRecipient)
+      setStep("fee");
+      const feeHash = await writeContractAsync({
         address: COUNTER_ADDRESS,
         abi: COUNTER_ABI as Abi,
         functionName: "forwardFee",
         args: [],
         value: feeWei
       });
+      setLastTxHash(feeHash);
+
+      if (publicClient) {
+        const feeReceipt = await publicClient.waitForTransactionReceipt({ hash: feeHash });
+        if (feeReceipt.status !== "success") {
+          console.warn("Fee tx failed");
+          setStep("idle");
+          return;
+        }
+      }
+
+      // Étape 3: requestFlipResult (déclenche le VRF)
+      setStep("vrf");
+      const currentBetId = betId || (await publicClient?.readContract({
+        address: COUNTER_ADDRESS,
+        abi: COUNTER_ABI as Abi,
+        functionName: "nextBetId"
+      }) as bigint) - BigInt(1);
+
+      const vrfHash = await writeContractAsync({
+        address: COUNTER_ADDRESS,
+        abi: COUNTER_ABI as Abi,
+        functionName: "requestFlipResult",
+        args: [currentBetId]
+      });
+      setLastTxHash(vrfHash);
+
+      if (publicClient) {
+        const vrfReceipt = await publicClient.waitForTransactionReceipt({ hash: vrfHash });
+        if (vrfReceipt.status === "success") {
+          setStep("done");
+          // Commencer à vérifier le résultat du pari périodiquement
+          checkBetResult(currentBetId);
+        } else {
+          console.warn("VRF request tx failed");
+          setStep("idle");
+        }
+      }
+
     } catch (e) {
       console.error("placeBet error:", e);
+      setStep("idle");
+    }
+  };
+
+  const checkBetResult = async (checkBetId: bigint) => {
+    if (!publicClient) return;
+    setIsCheckingResult(true);
+    
+    try {
+      // Vérifier le statut du pari
+      const flip = await publicClient.readContract({
+        address: COUNTER_ADDRESS,
+        abi: COUNTER_ABI as Abi,
+        functionName: "flips",
+        args: [checkBetId]
+      }) as [string, boolean, bigint, boolean, boolean]; // [player, choice, betNet, settled, didWin]
+
+      const [player, choice, betNet, settled, didWin] = flip;
+      
+      if (settled) {
+        setBetResult({ settled, didWin });
+        
+        // Si gagné, vérifier les gains en attente
+        if (didWin && publicClient) {
+          const winnings = await publicClient.readContract({
+            address: COUNTER_ADDRESS,
+            abi: COUNTER_ABI as Abi,
+            functionName: "pendingWinnings",
+            args: [player]
+          }) as bigint;
+          
+          setPendingWinnings(winnings);
+        }
+        setIsCheckingResult(false);
+      } else {
+        // Pas encore résolu, réessayer dans 5 secondes
+        setTimeout(() => checkBetResult(checkBetId), 5000);
+      }
+    } catch (e) {
+      console.error("Error checking bet result:", e);
+      setIsCheckingResult(false);
+    }
+  };
+
+  const onClaimPayout = async () => {
+    if (!publicClient) return;
+    
+    try {
+      const payoutHash = await writeContractAsync({
+        address: COUNTER_ADDRESS,
+        abi: COUNTER_ABI as Abi,
+        functionName: "getPayout",
+        args: []
+      });
+      setLastTxHash(payoutHash);
+
+      const receipt = await publicClient.waitForTransactionReceipt({ hash: payoutHash });
+      if (receipt.status === "success") {
+        setPendingWinnings(BigInt(0));
+        alert("Payout claimed successfully! 🎉");
+      }
+    } catch (e) {
+      console.error("Payout error:", e);
     }
   };
 
@@ -202,20 +337,24 @@ export default function Home() {
 
           <button
             onClick={onPlaceBet}
-            disabled={isPending || !betAmount || !choice}
+            disabled={isPending || !betAmount || !choice || step !== "idle"}
             style={{
               width: "100%",
               height: 44,
               marginTop: 12,
               borderRadius: 8,
               border: "1px solid #12406a",
-              background: isPending ? "#0e355b" : "#12406a",
+              background: (isPending || step !== "idle") ? "#0e355b" : "#12406a",
               color: "#fff",
               fontWeight: 700,
-              cursor: isPending ? "not-allowed" : "pointer",
+              cursor: (isPending || step !== "idle") ? "not-allowed" : "pointer",
             }}
           >
-            {isPending ? "Sending…" : `Place Bet ${choice ? `(${choice})` : ""}`}
+            {step === "placing" && "1/3 Placing bet…"}
+            {step === "fee" && "2/3 Sending fees…"}
+            {step === "vrf" && "3/3 Requesting result…"}
+            {step === "done" && "Bet complete! ✔"}
+            {step === "idle" && `Place Bet ${choice ? `(${choice})` : ""}`}
           </button>
 
           {feeText && (
@@ -224,14 +363,20 @@ export default function Home() {
             </div>
           )}
 
-          {(txHash || isConfirming || isConfirmed || writeError) && (
+          {betId && (
+            <div style={{ marginTop: 8, fontSize: 12, color: "#9dd1ff" }}>
+              Bet ID: {betId.toString()}
+            </div>
+          )}
+
+          {(lastTxHash || writeError) && (
             <div style={{ marginTop: 12, fontSize: 13 }}>
-              {txHash && (
+              {lastTxHash && (
                 <div style={{ marginBottom: 6 }}>
-                  Tx sent: {txHash.substring(0, 10)}…
+                  Last tx: {lastTxHash.substring(0, 10)}…
                   {" "}
                   <a
-                    href={`https://sepolia.basescan.org/tx/${txHash}`}
+                    href={`https://sepolia.basescan.org/tx/${lastTxHash}`}
                     target="_blank"
                     rel="noreferrer"
                     style={{ color: "#9dd1ff" }}
@@ -240,11 +385,95 @@ export default function Home() {
                   </a>
                 </div>
               )}
-              {isConfirming && <div>Confirming on-chain…</div>}
-              {isConfirmed && <div>Confirmed ✔</div>}
               {writeError && (
                 <div style={{ color: "#ffb4b4" }}>Error: {writeError.message}</div>
               )}
+            </div>
+          )}
+
+          {step === "done" && betId && !betResult && (
+            <div style={{ marginTop: 16, padding: 12, background: "#0e355b", borderRadius: 8 }}>
+              <div style={{ fontSize: 13, marginBottom: 8, color: "#9dd1ff" }}>
+                ⏳ Waiting for Chainlink VRF to settle your bet...
+              </div>
+              <div style={{ fontSize: 12, color: "#cfe8ff", marginBottom: 8 }}>
+                This may take 1-2 minutes. Check back soon!
+              </div>
+              {isCheckingResult && (
+                <div style={{ fontSize: 12, color: "#cfe8ff", marginTop: 8 }}>
+                  🔄 Checking result...
+                </div>
+              )}
+            </div>
+          )}
+
+          {betResult && betResult.settled && (
+            <div style={{ 
+              marginTop: 16, 
+              padding: 12, 
+              background: betResult.didWin ? "#0e4d2b" : "#4d0e0e", 
+              borderRadius: 8,
+              border: betResult.didWin ? "1px solid #1a7a3e" : "1px solid #7a1a1a"
+            }}>
+              <div style={{ fontSize: 16, marginBottom: 8, fontWeight: 700 }}>
+                {betResult.didWin ? "🎉 YOU WON!" : "😔 You Lost"}
+              </div>
+              <div style={{ fontSize: 13, color: "#cfe8ff", marginBottom: 8 }}>
+                {betResult.didWin 
+                  ? `Congratulations! You can claim your winnings.`
+                  : `Better luck next time!`
+                }
+              </div>
+              
+              {betResult.didWin && pendingWinnings > BigInt(0) && (
+                <>
+                  <div style={{ fontSize: 14, marginBottom: 8, color: "#9dd1ff" }}>
+                    Pending winnings: {(Number(pendingWinnings) / 1e18).toFixed(4)} ETH
+                  </div>
+                  <button
+                    onClick={onClaimPayout}
+                    disabled={isPending}
+                    style={{
+                      width: "100%",
+                      height: 40,
+                      borderRadius: 6,
+                      border: "1px solid #1a7a3e",
+                      background: "#1a7a3e",
+                      color: "#fff",
+                      fontWeight: 700,
+                      cursor: isPending ? "not-allowed" : "pointer",
+                      marginBottom: 8,
+                    }}
+                  >
+                    {isPending ? "Claiming..." : "Claim Payout 💰"}
+                  </button>
+                </>
+              )}
+              
+              <button
+                onClick={() => {
+                  setStep("idle");
+                  setBetId(null);
+                  setLastTxHash("");
+                  setBetAmount("");
+                  setChoice(null);
+                  setBetResult(null);
+                  setPendingWinnings(BigInt(0));
+                  reset();
+                }}
+                style={{
+                  width: "100%",
+                  height: 36,
+                  borderRadius: 6,
+                  border: "1px solid #12406a",
+                  background: "#12406a",
+                  color: "#fff",
+                  fontWeight: 600,
+                  cursor: "pointer",
+                }}
+              >
+                Place Another Bet
+              </button>
             </div>
           )}
         </div>

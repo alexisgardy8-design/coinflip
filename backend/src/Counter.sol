@@ -35,10 +35,11 @@ contract Counter is VRFConsumerBaseV2Plus {
       bool didWin;
     }
 
-    mapping(uint256 => Flip) public flips;              // requestId => Flip
+    mapping(uint256 => Flip) public flips;              // betId => Flip
+    mapping(uint256 => uint256) public requestToBet;    // requestId => betId
     mapping(address => uint256) public pendingWinnings; // joueur => gains à récupérer
    
-
+    uint256 public nextBetId = 1;
 
     uint256 public s_subscriptionId = 4937410816868527569599478232880574948340571343081385903828113851362140503943;
     uint256[] public requestIds;
@@ -72,36 +73,50 @@ contract Counter is VRFConsumerBaseV2Plus {
       emit RequestSent(requestId, numWords);
       return requestId;
     }
-    function placeBet(bool choice) external payable returns (uint256 requestId) {
+    function placeBet(bool choice) external payable returns (uint256 betId) {
       require(msg.value >= MIN_BET, "Bet too small");
 
       // Ici msg.value représente la mise nette (déjà hors frais)
       uint256 net = msg.value;
 
+      betId = nextBetId++;
+      
+      // Enregistre le pari (pas encore de VRF)
+      flips[betId] = Flip({
+        player: msg.sender,
+        choice: choice,
+        betNet: net,
+        settled: false,
+        didWin: false
+      });
+
       emit BetPlaced(msg.sender, msg.value, choice);
 
-      // Demande VRF (Base Sepolia)
-      requestId = s_vrfCoordinator.requestRandomWords(
-        VRFV2PlusClient.RandomWordsRequest({
-          keyHash: keyHash,
-          subId: s_subscriptionId,
-          requestConfirmations: requestConfirmations,
-          callbackGasLimit: callbackGasLimit,
-          numWords: numWords,
-          extraArgs: VRFV2PlusClient._argsToBytes(
+      return betId;
+  }
+
+  // Nouvelle fonction: déclenche le VRF pour un pari existant
+  function requestFlipResult(uint256 betId) external returns (uint256 requestId) {
+    Flip storage f = flips[betId];
+    require(f.player == msg.sender, "Not your bet");
+    require(!f.settled, "Already settled");
+
+    // Demande VRF (Base Sepolia) financé par LINK
+    requestId = s_vrfCoordinator.requestRandomWords(
+      VRFV2PlusClient.RandomWordsRequest({
+        keyHash: keyHash,
+        subId: s_subscriptionId,
+        requestConfirmations: requestConfirmations,
+        callbackGasLimit: callbackGasLimit,
+        numWords: numWords,
+        extraArgs: VRFV2PlusClient._argsToBytes(
           VRFV2PlusClient.ExtraArgsV1({nativePayment: false})
         )
       })
     );
 
-    // Enregistre le pari lié à la requête
-    flips[requestId] = Flip({
-      player: msg.sender,
-      choice: choice,
-      betNet: net,
-      settled: false,
-      didWin: false
-    });
+    // Lie requestId au betId
+    requestToBet[requestId] = betId;
 
     s_requests[requestId] = RequestStatus({randomWords: new uint256[](0), exists: true, fulfilled: false});
     requestIds.push(requestId);
@@ -126,8 +141,10 @@ contract Counter is VRFConsumerBaseV2Plus {
     s_requests[_requestId].fulfilled = true;
     s_requests[_requestId].randomWords = _randomWords;
 
-    // Récupère le pari et règle le résultat
-    Flip storage f = flips[_requestId];
+    // Récupère le betId via requestId
+    uint256 betId = requestToBet[_requestId];
+    Flip storage f = flips[betId];
+    
     if (f.player != address(0) && !f.settled) {
         uint256 word = _randomWords[0];
         bool flipSide = (word % 2 == 0);
