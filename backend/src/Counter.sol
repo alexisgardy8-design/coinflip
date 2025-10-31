@@ -30,7 +30,8 @@ contract Counter is VRFConsumerBaseV2Plus {
     struct Flip {
       address player;
       bool choice;
-      uint256 betNet;   // mise nette après frais
+      uint256 betNet;   // mise nette (98% du msg.value)
+      uint256 fee;      // frais (2% du msg.value) à envoyer après settlement
       bool settled;
       bool didWin;
     }
@@ -38,6 +39,7 @@ contract Counter is VRFConsumerBaseV2Plus {
     mapping(uint256 => Flip) public flips;              // betId => Flip
     mapping(uint256 => uint256) public requestToBet;    // requestId => betId
     mapping(address => uint256) public pendingWinnings; // joueur => gains à récupérer
+    mapping(address => uint256) public pendingFees;     // joueur => frais accumulés à envoyer au claim
    
     uint256 public nextBetId = 1;
 
@@ -78,32 +80,28 @@ contract Counter is VRFConsumerBaseV2Plus {
       return requestId;
     }
     function placeBet(bool choice) external payable returns (uint256 betId) {
-      // msg.value doit inclure TOTAL = mise nette + 2% frais
-      // Ex: pour parier 0.001 ETH net, l'utilisateur envoie ~0.00102 ETH
+      // L'utilisateur envoie X ETH
+      // 98% → mise nette (betNet)
+      // 2% → frais (fee) gardés de côté, envoyés APRÈS le settlement
       require(msg.value >= MIN_BET, "Bet too small");
 
-      // Calculer la mise nette (98% du total envoyé)
       uint256 total = msg.value;
-      uint256 fee = (total * 2) / 100;     // 2% pour les frais
-      uint256 net = total - fee;           // 98% pour le pari net
+      uint256 fee = (total * 2) / 100;         // 2% pour les frais
+      uint256 betNet = total - fee;            // 98% pour la mise nette
 
       betId = nextBetId++;
       
-      // Enregistre le pari (pas encore de VRF)
+      // Enregistre le pari avec les frais à payer plus tard
       flips[betId] = Flip({
         player: msg.sender,
         choice: choice,
-        betNet: net,
+        betNet: betNet,
+        fee: fee,
         settled: false,
         didWin: false
       });
 
-      // Transfère immédiatement les 2% au feeRecipient
-      (bool ok, ) = payable(feeRecipient).call{value: fee}("");
-      require(ok, "Fee transfer failed");
-
-      emit BetPlaced(msg.sender, net, choice);
-      emit FeePaid(feeRecipient, fee);
+      emit BetPlaced(msg.sender, betNet, choice);
 
       return betId;
   }
@@ -141,13 +139,19 @@ contract Counter is VRFConsumerBaseV2Plus {
     return requestId;
   }
 
-  // FONCTION OBSOLÈTE - Les frais sont maintenant automatiquement transférés dans placeBet
-  // Gardée pour compatibilité ABI mais ne devrait plus être utilisée
-  function forwardFee() external payable {
-    require(msg.value > 0, "No fee sent");
-    (bool ok, ) = payable(feeRecipient).call{value: msg.value}("");
+  // Envoyer les frais accumulés pour un joueur au feeRecipient
+  // Appelé après le settlement (win ou lose) pour transférer les 2% de frais
+  function forwardFee(address player) external {
+    uint256 fees = pendingFees[player];
+    require(fees > 0, "No fees to forward");
+    
+    // Effects
+    pendingFees[player] = 0;
+    
+    // Interactions
+    (bool ok, ) = payable(feeRecipient).call{value: fees}("");
     require(ok, "Fee transfer failed");
-    emit FeePaid(feeRecipient, msg.value);
+    emit FeePaid(feeRecipient, fees);
   }
 
   function fulfillRandomWords(uint256 _requestId, uint256[] calldata _randomWords) internal override {
@@ -165,10 +169,17 @@ contract Counter is VRFConsumerBaseV2Plus {
         bool didWin = (flipSide == f.choice);
         f.settled = true;
         f.didWin = didWin;
+        
         if (didWin) {
             uint256 winAmount = f.betNet * 2;
             pendingWinnings[f.player] += winAmount;
         }
+        
+        // Accumuler les frais pour ce joueur (seront envoyés au getPayout)
+        if (f.fee > 0) {
+            pendingFees[f.player] += f.fee;
+        }
+        
         emit CoinFlipResult(_requestId, f.player, didWin, word);
     }
 
@@ -188,12 +199,15 @@ contract Counter is VRFConsumerBaseV2Plus {
   function getPayout() external returns (uint256 amount) {
     amount = pendingWinnings[msg.sender];
     require(amount > 0, "No winnings");
+    
     // Effects
     pendingWinnings[msg.sender] = 0;
+    
     // Interactions
     (bool sent, ) = payable(msg.sender).call{value: amount}("");
     require(sent, "Payout failed");
     emit PayoutSent(msg.sender, amount);
+    
     return amount;
   }
 

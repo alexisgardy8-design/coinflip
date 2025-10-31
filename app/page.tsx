@@ -75,21 +75,19 @@ export default function Home() {
       if (txHash || writeError) reset();
       setStep("placing");
 
-      // L'utilisateur entre le montant NET qu'il veut parier
-      // On calcule le total à envoyer (montant + 2% frais)
-      const netWei = parseEther(amount as `${number}`);
-      const feeWei = (netWei * BigInt(2)) / BigInt(100); // 2% de frais
-      const totalWei = netWei + feeWei;  // Total à envoyer au contrat
+      // L'utilisateur entre le montant total à envoyer
+      // 98% → mise nette, 2% → frais (envoyés après settlement)
+      const amountWei = parseEther(amount as `${number}`);
       
       const picked = choice === "heads"; // true=heads, false=tails
 
-      // Étape 1: placeBet (enregistre le pari + transfert auto des frais)
+      // Étape 1: placeBet (98% pour le pari, 2% gardés pour frais après settlement)
       const betHash = await writeContractAsync({
         address: COUNTER_ADDRESS,
         abi: COUNTER_ABI as Abi,
         functionName: "placeBet",
         args: [picked],
-        value: totalWei  // Envoie montant total (net + fees)
+        value: amountWei  // Total (98% pari + 2% frais)
       });
       setLastTxHash(betHash);
 
@@ -158,9 +156,9 @@ export default function Home() {
         abi: COUNTER_ABI as Abi,
         functionName: "flips",
         args: [checkBetId]
-      }) as [string, boolean, bigint, boolean, boolean]; // [player, choice, betNet, settled, didWin]
+      }) as [string, boolean, bigint, bigint, boolean, boolean]; // [player, choice, betNet, fee, settled, didWin]
 
-      const [player, , , settled, didWin] = flip;
+      const [player, , , , settled, didWin] = flip;
       
       if (settled) {
         setBetResult({ settled, didWin });
@@ -176,6 +174,21 @@ export default function Home() {
           
           setPendingWinnings(winnings);
         }
+        
+        // Après le settlement (win ou lose), appeler forwardFee pour envoyer les 2%
+        try {
+          const feeHash = await writeContractAsync({
+            address: COUNTER_ADDRESS,
+            abi: COUNTER_ABI as Abi,
+            functionName: "forwardFee",
+            args: [player]
+          });
+          console.log("Fees forwarded:", feeHash);
+        } catch (feeError) {
+          console.error("Error forwarding fees:", feeError);
+          // Ne pas bloquer si l'envoi des frais échoue
+        }
+        
         setIsCheckingResult(false);
       } else {
         // Pas encore résolu, réessayer dans 5 secondes
@@ -241,12 +254,20 @@ export default function Home() {
     }
   };
 
-  // 2% of the entered bet in ETH (display only)
+  // Calcul de la mise nette et des frais
+  const netBetText = (() => {
+    if (!betAmount) return null;
+    const amountNum = Number(betAmount);
+    if (!Number.isFinite(amountNum) || amountNum <= 0) return null;
+    const netBet = amountNum * 0.98; // 98% pour la mise nette
+    return netBet.toLocaleString(undefined, { maximumFractionDigits: 6 });
+  })();
+  
   const feeText = (() => {
     if (!betAmount) return null;
     const amountNum = Number(betAmount);
     if (!Number.isFinite(amountNum) || amountNum <= 0) return null;
-    const fee = amountNum * 0.02; // 2% of bet in ETH
+    const fee = amountNum * 0.02; // 2% de frais (envoyés après settlement)
     return fee.toLocaleString(undefined, { maximumFractionDigits: 6 });
   })();
 
@@ -431,15 +452,15 @@ export default function Home() {
             {step === "idle" && `Place Bet ${choice ? `(${choice})` : ""}`}
           </button>
 
-          {feeText && (
-            <div style={{ marginTop: 8, fontSize: 12, color: "#cfe8ff" }}>
-              2% fees (auto-deducted): {feeText} ETH
+          {netBetText && (
+            <div style={{ marginTop: 8, fontSize: 12, color: "#9dd1ff" }}>
+              Net bet: {netBetText} ETH (98%)
             </div>
           )}
           
-          {betAmount && (
-            <div style={{ marginTop: 4, fontSize: 12, color: "#9dd1ff" }}>
-              Total to send: {(Number(betAmount) * 1.02).toFixed(6)} ETH (bet + fees)
+          {feeText && (
+            <div style={{ marginTop: 4, fontSize: 12, color: "#cfe8ff" }}>
+              Fees (sent after result): {feeText} ETH (2%)
             </div>
           )}
 

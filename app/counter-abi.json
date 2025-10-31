@@ -88,6 +88,11 @@
         "internalType": "uint256"
       },
       {
+        "name": "fee",
+        "type": "uint256",
+        "internalType": "uint256"
+      },
+      {
         "name": "settled",
         "type": "bool",
         "internalType": "bool"
@@ -103,9 +108,15 @@
   {
     "type": "function",
     "name": "forwardFee",
-    "inputs": [],
+    "inputs": [
+      {
+        "name": "player",
+        "type": "address",
+        "internalType": "address"
+      }
+    ],
     "outputs": [],
-    "stateMutability": "payable"
+    "stateMutability": "nonpayable"
   },
   {
     "type": "function",
@@ -262,6 +273,25 @@
         "name": "",
         "type": "address",
         "internalType": "address"
+      }
+    ],
+    "stateMutability": "view"
+  },
+  {
+    "type": "function",
+    "name": "pendingFees",
+    "inputs": [
+      {
+        "name": "",
+        "type": "address",
+        "internalType": "address"
+      }
+    ],
+    "outputs": [
+      {
+        "name": "",
+        "type": "uint256",
+        "internalType": "uint256"
       }
     ],
     "stateMutability": "view"
