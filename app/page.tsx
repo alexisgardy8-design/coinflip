@@ -128,7 +128,7 @@ export default function Home() {
     if (attempt >= MAX_ATTEMPTS) {
       console.warn("VRF timeout - max attempts reached");
       setIsCheckingResult(false);
-      setStep("idle");
+      // Garder step="done" pour afficher les options de retry
       // Permettre à l'utilisateur de réessayer manuellement
       return;
     }
@@ -147,12 +147,23 @@ export default function Home() {
 
       const [player, choice, , settled, didWin] = flip;
       
+      console.log("Checking bet result:", { 
+        betId: checkBetId.toString(), 
+        attempt: attempt + 1, 
+        settled, 
+        didWin, 
+        choice,
+        player 
+      });
+      
       if (settled) {
         // Récupérer le résultat VRF pour l'afficher
         const result = choice ? "Heads" : "Tails"; // choice du joueur
         
         // Le résultat réel du VRF est l'inverse si le joueur a perdu, sinon pareil
         const vrfResult = didWin ? result : (choice ? "Tails" : "Heads");
+        
+        console.log("Bet settled! Result:", vrfResult, "Win:", didWin);
         
         setBetResult({ settled, didWin, result: vrfResult });
         
@@ -172,6 +183,7 @@ export default function Home() {
         setCheckAttempts(0);
       } else {
         // Pas encore résolu, réessayer dans 5 secondes
+        console.log("Bet not settled yet, retrying in 5s...");
         setTimeout(() => checkBetResult(checkBetId, attempt + 1), 5000);
       }
     } catch (e) {
