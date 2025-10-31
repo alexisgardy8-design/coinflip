@@ -21,8 +21,6 @@ contract Counter is VRFConsumerBaseV2Plus {
         uint256[] randomWords;
     }
     mapping(uint256 => RequestStatus) public s_requests; 
-
-  // 2% fees handled separately via forwardFee(); not taken inside placeBet
   
     uint256 public constant MIN_BET = 0.001 ether;
     address public immutable feeRecipient;
@@ -30,8 +28,7 @@ contract Counter is VRFConsumerBaseV2Plus {
     struct Flip {
       address player;
       bool choice;
-      uint256 betNet;   // mise nette (98% du msg.value)
-      uint256 fee;      // frais (2% du msg.value) à envoyer après settlement
+      uint256 betNet;   // mise nette
       bool settled;
       bool didWin;
     }
@@ -39,7 +36,7 @@ contract Counter is VRFConsumerBaseV2Plus {
     mapping(uint256 => Flip) public flips;              // betId => Flip
     mapping(uint256 => uint256) public requestToBet;    // requestId => betId
     mapping(address => uint256) public pendingWinnings; // joueur => gains à récupérer
-    mapping(address => uint256) public pendingFees;     // joueur => frais accumulés à envoyer au claim
+    mapping(uint256 => uint256) private betFees;        // betId => frais (2%) à envoyer après settlement
    
     uint256 public nextBetId = 1;
 
@@ -80,23 +77,22 @@ contract Counter is VRFConsumerBaseV2Plus {
       return requestId;
     }
     function placeBet(bool choice) external payable returns (uint256 betId) {
-      // L'utilisateur envoie X ETH
-      // 98% → mise nette (betNet)
-      // 2% → frais (fee) gardés de côté, envoyés APRÈS le settlement
       require(msg.value >= MIN_BET, "Bet too small");
-
-      uint256 total = msg.value;
-      uint256 fee = (total * 2) / 100;         // 2% pour les frais
-      uint256 betNet = total - fee;            // 98% pour la mise nette
 
       betId = nextBetId++;
       
-      // Enregistre le pari avec les frais à payer plus tard
+      // Calculer 98% pour le pari, 2% pour les frais
+      uint256 fee = (msg.value * 2) / 100;       // 2% de frais
+      uint256 betNet = msg.value - fee;          // 98% pour le pari
+      
+      // Stocker les frais pour ce bet (seront envoyés après settlement)
+      betFees[betId] = fee;
+      
+      // Enregistre le pari avec la mise nette (98%)
       flips[betId] = Flip({
         player: msg.sender,
         choice: choice,
         betNet: betNet,
-        fee: fee,
         settled: false,
         didWin: false
       });
@@ -139,22 +135,9 @@ contract Counter is VRFConsumerBaseV2Plus {
     return requestId;
   }
 
-  // Envoyer les frais accumulés pour un joueur au feeRecipient
-  // Appelé après le settlement (win ou lose) pour transférer les 2% de frais
-  function forwardFee(address player) external {
-    uint256 fees = pendingFees[player];
-    require(fees > 0, "No fees to forward");
-    
-    // Effects
-    pendingFees[player] = 0;
-    
-    // Interactions
-    (bool ok, ) = payable(feeRecipient).call{value: fees}("");
-    require(ok, "Fee transfer failed");
-    emit FeePaid(feeRecipient, fees);
-  }
 
-  function fulfillRandomWords(uint256 _requestId, uint256[] calldata _randomWords) internal override {
+
+    function fulfillRandomWords(uint256 _requestId, uint256[] calldata _randomWords) internal override {
     require(s_requests[_requestId].exists, "request not found");
     s_requests[_requestId].fulfilled = true;
     s_requests[_requestId].randomWords = _randomWords;
@@ -175,9 +158,13 @@ contract Counter is VRFConsumerBaseV2Plus {
             pendingWinnings[f.player] += winAmount;
         }
         
-        // Accumuler les frais pour ce joueur (seront envoyés au getPayout)
-        if (f.fee > 0) {
-            pendingFees[f.player] += f.fee;
+        // Envoyer les frais (2%) au feeRecipient après settlement
+        uint256 fee = betFees[betId];
+        if (fee > 0) {
+            betFees[betId] = 0; // Clear fees
+            (bool ok, ) = payable(feeRecipient).call{value: fee}("");
+            require(ok, "Fee transfer failed");
+            emit FeePaid(feeRecipient, fee);
         }
         
         emit CoinFlipResult(_requestId, f.player, didWin, word);
