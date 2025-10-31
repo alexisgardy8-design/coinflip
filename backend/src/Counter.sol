@@ -22,7 +22,7 @@ contract Counter is VRFConsumerBaseV2Plus {
     }
     mapping(uint256 => RequestStatus) public s_requests; 
   
-    uint256 public constant MIN_BET = 0.00098 ether;
+    uint256 public constant MIN_BET = 0.001 ether;
     address public immutable feeRecipient;
 
     struct Flip {
