@@ -6,7 +6,7 @@ import { useMiniKit } from "@coinbase/onchainkit/minikit";
 // import { useQuickAuth } from "@coinbase/onchainkit/minikit";
 import styles from "./page.module.css";
 import { COUNTER_ADDRESS, COUNTER_ABI } from "./contract";
-import { useWriteContract, useWaitForTransactionReceipt, usePublicClient } from "wagmi";
+import { useWriteContract, usePublicClient } from "wagmi";
 import { Abi, parseEther } from "viem";
 
 
@@ -33,9 +33,6 @@ export default function Home() {
 
   const { data: txHash, isPending, writeContractAsync, error: writeError, reset } = useWriteContract();
   const publicClient = usePublicClient();
-  const { isLoading: isConfirming, isSuccess: isConfirmed } = useWaitForTransactionReceipt({
-    hash: txHash,
-  });
 
   useEffect(() => {
     if (!isMiniAppReady) {
@@ -81,22 +78,7 @@ export default function Home() {
           return;
         }
 
-        // Le contrat retourne betId, on peut le lire depuis les logs ou utiliser la valeur de retour
-        // Pour simplifier, on va appeler le contrat pour récupérer nextBetId - 1
-        // Alternativement, décoder les logs ou utiliser une approche différente
-        // Ici on suppose que placeBet retourne betId dans la valeur de retour (nécessite ethers ou cast)
-        // Pour l'instant, on va utiliser une approche simple: récupérer depuis les logs BetPlaced
-        
-        const betPlacedLog = receipt.logs.find((log) => {
-          try {
-            return log.topics[0] === "0x4a3f6f8a3b88c725055f2ff0a3b1b7e4c3e0c62f6b1d9c8e7f6a5b4c3d2e1f0"; // placeholder, besoin du vrai topic
-          } catch {
-            return false;
-          }
-        });
-        
-        // Pour simplifier et éviter le parsing complexe, on va stocker betId côté frontend
-        // Utilisons nextBetId du contrat - 1 comme betId actuel
+        // Récupérer betId depuis nextBetId - 1
         const nextBetIdFromContract = await publicClient.readContract({
           address: COUNTER_ADDRESS,
           abi: COUNTER_ABI as Abi,
@@ -174,7 +156,7 @@ export default function Home() {
         args: [checkBetId]
       }) as [string, boolean, bigint, boolean, boolean]; // [player, choice, betNet, settled, didWin]
 
-      const [player, choice, betNet, settled, didWin] = flip;
+      const [player, , , settled, didWin] = flip;
       
       if (settled) {
         setBetResult({ settled, didWin });
