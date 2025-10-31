@@ -272,90 +272,24 @@ export default function Home() {
       </header>
 
       <div className={styles.content}>
-        <Image
-          priority
-          src="/sphere.svg"
-          alt="Sphere"
-          width={200}
-          height={200}
-        />
-        <h1 className={styles.title}>MiniKit</h1>
-
-        <p>
-          Get started by editing <code>app/page.tsx</code>
-        </p>
-
-        <div style={{ marginTop: 16, marginBottom: 24, textAlign: "center" }}>
-          <p style={{ marginBottom: 8 }}>
-            Contract address:
+        {/* Header avec titre personnalisé */}
+        <div style={{ textAlign: "center", marginBottom: 32 }}>
+          <div style={{ fontSize: 64, marginBottom: 8 }}>🪙</div>
+          <h1 style={{ 
+            fontSize: 36, 
+            fontWeight: 800, 
+            margin: 0, 
+            marginBottom: 8,
+            background: "linear-gradient(135deg, #FFD700 0%, #FFA500 100%)",
+            WebkitBackgroundClip: "text",
+            WebkitTextFillColor: "transparent",
+            backgroundClip: "text"
+          }}>
+            Coin Flip
+          </h1>
+          <p style={{ fontSize: 14, color: "#9ca3af", margin: 0 }}>
+            Provably fair • Powered by Chainlink VRF
           </p>
-          <p style={{ wordBreak: "break-all", marginBottom: 8 }}>
-            <code>{COUNTER_ADDRESS}</code>
-          </p>
-          <a
-            target="_blank"
-            rel="noreferrer"
-            href={`https://sepolia.basescan.org/address/${COUNTER_ADDRESS}`}
-          >
-            View on Basescan (Base Sepolia)
-          </a>
-          <div style={{ marginTop: 12, fontSize: 14, color: "#9dd1ff" }}>
-            Contract Balance: {(Number(contractBalance) / 1e18).toFixed(4)} ETH
-          </div>
-        </div>
-
-        {/* Fund Contract Section */}
-        <div style={{
-          marginTop: 16,
-          marginBottom: 24,
-          width: "100%",
-          maxWidth: 420,
-          border: "1px solid #12406a",
-          borderRadius: 12,
-          padding: 16,
-          background: "#0b2e50",
-          color: "#fff",
-        }}>
-          <h2 style={{ margin: 0, marginBottom: 12, fontSize: 18 }}>Fund Contract 💰</h2>
-          <p style={{ fontSize: 13, color: "#cfe8ff", marginBottom: 12 }}>
-            Add ETH to the contract to pay winners
-          </p>
-          <input
-            type="number"
-            inputMode="decimal"
-            min="0"
-            step="0.01"
-            placeholder="Amount in ETH"
-            value={fundAmount}
-            onChange={(e) => setFundAmount(e.target.value)}
-            style={{
-              width: "100%",
-              height: 44,
-              borderRadius: 8,
-              border: "1px solid #12406a",
-              background: "#0e355b",
-              color: "#fff",
-              padding: "0 12px",
-              outline: "none",
-              marginBottom: 12,
-            }}
-          />
-          <button
-            onClick={onFundContract}
-            disabled={isPending || !fundAmount}
-            style={{
-              width: "100%",
-              height: 44,
-              borderRadius: 8,
-              border: "1px solid #12406a",
-              background: (isPending || !fundAmount) ? "#0e355b" : "#1a7a3e",
-              color: "#fff",
-              fontWeight: 700,
-              cursor: (isPending || !fundAmount) ? "not-allowed" : "pointer",
-            }}
-          >
-            {isPending ? "Funding..." : "Fund Contract"}
-          </button>
         </div>
 
         <div style={{
@@ -363,15 +297,18 @@ export default function Home() {
           marginBottom: 24,
           width: "100%",
           maxWidth: 420,
-          border: "1px solid #12406a",
-          borderRadius: 12,
-          padding: 16,
-          background: "#0b2e50",
+          border: "1px solid #2d1b4e",
+          borderRadius: 16,
+          padding: 24,
+          background: "linear-gradient(135deg, #1a1032 0%, #2d1b4e 100%)",
           color: "#fff",
+          boxShadow: "0 8px 32px rgba(139, 92, 246, 0.15)",
         }}>
-          <h2 style={{ margin: 0, marginBottom: 12, fontSize: 20 }}>Place your bet</h2>
-          <label style={{ display: "block", fontSize: 14, opacity: 0.9, marginBottom: 8, color: "#fff" }}>
-            Bet amount (ETH)
+          <h2 style={{ margin: 0, marginBottom: 20, fontSize: 22, fontWeight: 700, textAlign: "center" }}>
+            Place Your Bet 🎲
+          </h2>
+          <label style={{ display: "block", fontSize: 14, marginBottom: 8, color: "#d1d5db", fontWeight: 500 }}>
+            Bet Amount (ETH)
           </label>
           <input
             type="number"
@@ -383,46 +320,96 @@ export default function Home() {
             onChange={(e) => setBetAmount(e.target.value)}
             style={{
               width: "100%",
-              height: 44,
-              borderRadius: 8,
-              border: "1px solid #12406a",
-              background: "#0e355b",
+              height: 48,
+              borderRadius: 10,
+              border: "2px solid #4c1d95",
+              background: "#0f0820",
               color: "#fff",
-              padding: "0 12px",
+              padding: "0 16px",
               outline: "none",
+              fontSize: 16,
+              transition: "border-color 0.2s, box-shadow 0.2s",
+            }}
+            onFocus={(e) => {
+              e.target.style.borderColor = "#8b5cf6";
+              e.target.style.boxShadow = "0 0 0 3px rgba(139, 92, 246, 0.1)";
+            }}
+            onBlur={(e) => {
+              e.target.style.borderColor = "#4c1d95";
+              e.target.style.boxShadow = "none";
             }}
           />
-          <div style={{ display: "flex", gap: 12, marginTop: 16 }}>
-            <button
-              onClick={() => onSelect("heads")}
-              style={{
-                flex: 1,
-                height: 44,
-                borderRadius: 8,
-                border: "1px solid #12406a",
-                background: "#0b2e50",
-                color: "#fff",
-                fontWeight: 600,
-                cursor: "pointer",
-              }}
-            >
-              Heads
-            </button>
-            <button
-              onClick={() => onSelect("tails")}
-              style={{
-                flex: 1,
-                height: 44,
-                borderRadius: 8,
-                border: "1px solid #12406a",
-                background: "#0b2e50",
-                color: "#fff",
-                fontWeight: 600,
-                cursor: "pointer",
-              }}
-            >
-              Tails
-            </button>
+          
+          <div style={{ marginTop: 20, marginBottom: 8 }}>
+            <label style={{ display: "block", fontSize: 14, color: "#d1d5db", fontWeight: 500, marginBottom: 12 }}>
+              Choose Your Side
+            </label>
+            <div style={{ display: "flex", gap: 12 }}>
+              <button
+                onClick={() => onSelect("heads")}
+                style={{
+                  flex: 1,
+                  height: 56,
+                  borderRadius: 12,
+                  border: choice === "heads" ? "2px solid #FFD700" : "2px solid #4c1d95",
+                  background: choice === "heads" 
+                    ? "linear-gradient(135deg, #FFD700 0%, #FFA500 100%)" 
+                    : "#1a1032",
+                  color: choice === "heads" ? "#000" : "#fff",
+                  fontWeight: 700,
+                  fontSize: 16,
+                  cursor: "pointer",
+                  transition: "all 0.2s ease",
+                  boxShadow: choice === "heads" ? "0 4px 16px rgba(255, 215, 0, 0.4)" : "none",
+                }}
+                onMouseEnter={(e) => {
+                  if (choice !== "heads") {
+                    e.currentTarget.style.background = "#2d1b4e";
+                    e.currentTarget.style.borderColor = "#8b5cf6";
+                  }
+                }}
+                onMouseLeave={(e) => {
+                  if (choice !== "heads") {
+                    e.currentTarget.style.background = "#1a1032";
+                    e.currentTarget.style.borderColor = "#4c1d95";
+                  }
+                }}
+              >
+                👑 Heads
+              </button>
+              <button
+                onClick={() => onSelect("tails")}
+                style={{
+                  flex: 1,
+                  height: 56,
+                  borderRadius: 12,
+                  border: choice === "tails" ? "2px solid #FFD700" : "2px solid #4c1d95",
+                  background: choice === "tails" 
+                    ? "linear-gradient(135deg, #FFD700 0%, #FFA500 100%)" 
+                    : "#1a1032",
+                  color: choice === "tails" ? "#000" : "#fff",
+                  fontWeight: 700,
+                  fontSize: 16,
+                  cursor: "pointer",
+                  transition: "all 0.2s ease",
+                  boxShadow: choice === "tails" ? "0 4px 16px rgba(255, 215, 0, 0.4)" : "none",
+                }}
+                onMouseEnter={(e) => {
+                  if (choice !== "tails") {
+                    e.currentTarget.style.background = "#2d1b4e";
+                    e.currentTarget.style.borderColor = "#8b5cf6";
+                  }
+                }}
+                onMouseLeave={(e) => {
+                  if (choice !== "tails") {
+                    e.currentTarget.style.background = "#1a1032";
+                    e.currentTarget.style.borderColor = "#4c1d95";
+                  }
+                }}
+              >
+                🔄 Tails
+              </button>
+            </div>
           </div>
 
           <button
@@ -430,78 +417,123 @@ export default function Home() {
             disabled={isPending || !betAmount || !choice || step !== "idle"}
             style={{
               width: "100%",
-              height: 44,
-              marginTop: 12,
-              borderRadius: 8,
-              border: "1px solid #12406a",
-              background: (isPending || step !== "idle") ? "#0e355b" : "#12406a",
+              height: 52,
+              marginTop: 20,
+              borderRadius: 12,
+              border: "none",
+              background: (isPending || step !== "idle") 
+                ? "#4c1d95" 
+                : "linear-gradient(135deg, #8b5cf6 0%, #7c3aed 100%)",
               color: "#fff",
               fontWeight: 700,
+              fontSize: 16,
               cursor: (isPending || step !== "idle") ? "not-allowed" : "pointer",
+              transition: "all 0.2s ease",
+              boxShadow: (isPending || step !== "idle") 
+                ? "none" 
+                : "0 4px 16px rgba(139, 92, 246, 0.4)",
+            }}
+            onMouseEnter={(e) => {
+              if (step === "idle" && !isPending && betAmount && choice) {
+                e.currentTarget.style.transform = "translateY(-2px)";
+                e.currentTarget.style.boxShadow = "0 6px 24px rgba(139, 92, 246, 0.5)";
+              }
+            }}
+            onMouseLeave={(e) => {
+              e.currentTarget.style.transform = "translateY(0)";
+              e.currentTarget.style.boxShadow = (isPending || step !== "idle") 
+                ? "none" 
+                : "0 4px 16px rgba(139, 92, 246, 0.4)";
             }}
           >
             {step === "placing" && "1/2 Placing bet…"}
             {step === "vrf" && "2/2 Requesting result…"}
             {step === "done" && "Bet complete! ✔"}
-            {step === "idle" && `Place Bet ${choice ? `(${choice})` : ""}`}
+            {step === "idle" && `🎲 Place Bet ${choice ? `(${choice})` : ""}`}
           </button>
 
           {actualBetText && (
-            <div style={{ marginTop: 8, fontSize: 12, color: "#9dd1ff" }}>
-              Amount sent to contract: {actualBetText} ETH (98%)
-            </div>
-          )}
-          
-          {feeText && (
-            <div style={{ marginTop: 4, fontSize: 12, color: "#ffa07a" }}>
-              Support fee: {feeText} ETH (2%)
-            </div>
-          )}
-
-          {potentialWinText && (
-            <div style={{ marginTop: 4, fontSize: 12, color: "#90ee90", fontWeight: 600 }}>
-              Potential win: {potentialWinText} ETH
+            <div style={{ 
+              marginTop: 16, 
+              padding: 12, 
+              background: "#0f0820", 
+              borderRadius: 8,
+              border: "1px solid #4c1d95"
+            }}>
+              <div style={{ fontSize: 12, color: "#a78bfa", marginBottom: 4 }}>
+                💰 Net bet: {actualBetText} ETH (98%)
+              </div>
+              <div style={{ fontSize: 12, color: "#fbbf24", marginBottom: 4 }}>
+                ⚡ Support fee: {feeText} ETH (2%)
+              </div>
+              {potentialWinText && (
+                <div style={{ fontSize: 13, color: "#10b981", fontWeight: 600, marginTop: 8 }}>
+                  🎯 Potential win: {potentialWinText} ETH
+                </div>
+              )}
             </div>
           )}
 
           {betId && (
-            <div style={{ marginTop: 8, fontSize: 12, color: "#9dd1ff" }}>
+            <div style={{ marginTop: 12, fontSize: 12, color: "#a78bfa", textAlign: "center" }}>
               Bet ID: {betId.toString()}
             </div>
           )}
 
           {(lastTxHash || writeError) && (
-            <div style={{ marginTop: 12, fontSize: 13 }}>
+            <div style={{ marginTop: 12, fontSize: 12 }}>
               {lastTxHash && (
-                <div style={{ marginBottom: 6 }}>
-                  Last tx: {lastTxHash.substring(0, 10)}…
+                <div style={{ 
+                  marginBottom: 6, 
+                  padding: 8, 
+                  background: "#0f0820", 
+                  borderRadius: 6,
+                  textAlign: "center"
+                }}>
+                  <span style={{ color: "#a78bfa" }}>Tx: {lastTxHash.substring(0, 10)}…</span>
                   {" "}
                   <a
                     href={`https://sepolia.basescan.org/tx/${lastTxHash}`}
                     target="_blank"
                     rel="noreferrer"
-                    style={{ color: "#9dd1ff" }}
+                    style={{ color: "#8b5cf6", textDecoration: "underline" }}
                   >
                     View
                   </a>
                 </div>
               )}
               {writeError && (
-                <div style={{ color: "#ffb4b4" }}>Error: {writeError.message}</div>
+                <div style={{ 
+                  color: "#ef4444", 
+                  background: "#fef2f2", 
+                  padding: 12, 
+                  borderRadius: 8,
+                  border: "1px solid #fecaca"
+                }}>
+                  ⚠️ {writeError.message}
+                </div>
               )}
             </div>
           )}
 
           {step === "done" && betId && !betResult && (
-            <div style={{ marginTop: 16, padding: 12, background: "#0e355b", borderRadius: 8 }}>
-              <div style={{ fontSize: 13, marginBottom: 8, color: "#9dd1ff" }}>
-                ⏳ Waiting for Chainlink VRF to settle your bet...
+            <div style={{ 
+              marginTop: 16, 
+              padding: 16, 
+              background: "#0f0820", 
+              borderRadius: 12,
+              border: "1px solid #4c1d95",
+              textAlign: "center"
+            }}>
+              <div style={{ fontSize: 32, marginBottom: 8 }}>🔮</div>
+              <div style={{ fontSize: 14, marginBottom: 8, color: "#a78bfa", fontWeight: 600 }}>
+                ⏳ Waiting for Chainlink VRF...
               </div>
-              <div style={{ fontSize: 12, color: "#cfe8ff", marginBottom: 8 }}>
-                This may take 1-2 minutes. Check back soon!
+              <div style={{ fontSize: 12, color: "#9ca3af", marginBottom: 8 }}>
+                This may take 1-2 minutes. The coin is flipping! 🪙
               </div>
               {isCheckingResult && (
-                <div style={{ fontSize: 12, color: "#cfe8ff", marginTop: 8 }}>
+                <div style={{ fontSize: 12, color: "#8b5cf6", marginTop: 8 }}>
                   🔄 Checking result...
                 </div>
               )}
@@ -511,45 +543,75 @@ export default function Home() {
           {betResult && betResult.settled && (
             <div style={{ 
               marginTop: 16, 
-              padding: 12, 
-              background: betResult.didWin ? "#0e4d2b" : "#4d0e0e", 
-              borderRadius: 8,
-              border: betResult.didWin ? "1px solid #1a7a3e" : "1px solid #7a1a1a"
+              padding: 20, 
+              background: betResult.didWin 
+                ? "linear-gradient(135deg, #064e3b 0%, #065f46 100%)" 
+                : "linear-gradient(135deg, #7f1d1d 0%, #991b1b 100%)", 
+              borderRadius: 12,
+              border: betResult.didWin ? "2px solid #10b981" : "2px solid #ef4444",
+              boxShadow: betResult.didWin 
+                ? "0 8px 32px rgba(16, 185, 129, 0.3)" 
+                : "0 8px 32px rgba(239, 68, 68, 0.3)",
+              textAlign: "center"
             }}>
-              <div style={{ fontSize: 16, marginBottom: 8, fontWeight: 700 }}>
-                {betResult.didWin ? "🎉 YOU WON!" : "😔 YOU LOST"}
+              <div style={{ fontSize: 48, marginBottom: 12 }}>
+                {betResult.didWin ? "🎉" : "😔"}
               </div>
-              <div style={{ fontSize: 14, color: "#ffd700", marginBottom: 8, fontWeight: 600 }}>
+              <div style={{ fontSize: 24, marginBottom: 12, fontWeight: 800, color: "#fff" }}>
+                {betResult.didWin ? "YOU WON!" : "YOU LOST"}
+              </div>
+              <div style={{ fontSize: 16, color: "#fbbf24", marginBottom: 12, fontWeight: 600 }}>
                 🪙 Result: {betResult.result}
               </div>
-              <div style={{ fontSize: 13, color: "#cfe8ff", marginBottom: 8 }}>
+              <div style={{ fontSize: 13, color: "#e5e7eb", marginBottom: 16 }}>
                 {betResult.didWin 
-                  ? `The coin landed on ${betResult.result}. You can claim your winnings below!`
-                  : `The coin landed on ${betResult.result}. Better luck next time!`
+                  ? `The coin landed on ${betResult.result}! 🎊`
+                  : `The coin landed on ${betResult.result}. Try again!`
                 }
               </div>
               
               {betResult.didWin && pendingWinnings > BigInt(0) && (
                 <>
-                  <div style={{ fontSize: 14, marginBottom: 8, color: "#9dd1ff" }}>
-                    Pending winnings: {(Number(pendingWinnings) / 1e18).toFixed(4)} ETH
+                  <div style={{ 
+                    fontSize: 18, 
+                    marginBottom: 16, 
+                    color: "#fbbf24",
+                    fontWeight: 700,
+                    padding: 12,
+                    background: "rgba(0,0,0,0.3)",
+                    borderRadius: 8
+                  }}>
+                    💰 Winnings: {(Number(pendingWinnings) / 1e18).toFixed(4)} ETH
                   </div>
                   <button
                     onClick={onClaimPayout}
                     disabled={isPending}
                     style={{
                       width: "100%",
-                      height: 40,
-                      borderRadius: 6,
-                      border: "1px solid #1a7a3e",
-                      background: "#1a7a3e",
+                      height: 48,
+                      borderRadius: 10,
+                      border: "none",
+                      background: "linear-gradient(135deg, #10b981 0%, #059669 100%)",
                       color: "#fff",
                       fontWeight: 700,
+                      fontSize: 16,
                       cursor: isPending ? "not-allowed" : "pointer",
-                      marginBottom: 8,
+                      marginBottom: 12,
+                      transition: "all 0.2s ease",
+                      boxShadow: "0 4px 16px rgba(16, 185, 129, 0.4)",
+                    }}
+                    onMouseEnter={(e) => {
+                      if (!isPending) {
+                        e.currentTarget.style.transform = "translateY(-2px)";
+                        e.currentTarget.style.boxShadow = "0 6px 24px rgba(16, 185, 129, 0.5)";
+                      }
+                    }}
+                    onMouseLeave={(e) => {
+                      e.currentTarget.style.transform = "translateY(0)";
+                      e.currentTarget.style.boxShadow = "0 4px 16px rgba(16, 185, 129, 0.4)";
                     }}
                   >
-                    {isPending ? "Claiming..." : "Claim Payout 💰"}
+                    {isPending ? "Claiming..." : "💸 Claim Winnings"}
                   </button>
                 </>
               )}
@@ -569,53 +631,27 @@ export default function Home() {
                 }}
                 style={{
                   width: "100%",
-                  height: 36,
-                  borderRadius: 6,
-                  border: "1px solid #12406a",
-                  background: "#12406a",
+                  height: 44,
+                  borderRadius: 10,
+                  border: "2px solid rgba(255,255,255,0.3)",
+                  background: "rgba(255,255,255,0.1)",
                   color: "#fff",
                   fontWeight: 600,
                   cursor: "pointer",
+                  transition: "all 0.2s ease",
+                }}
+                onMouseEnter={(e) => {
+                  e.currentTarget.style.background = "rgba(255,255,255,0.2)";
+                }}
+                onMouseLeave={(e) => {
+                  e.currentTarget.style.background = "rgba(255,255,255,0.1)";
                 }}
               >
-                Place Another Bet
+                🎲 Place Another Bet
               </button>
             </div>
           )}
         </div>
-
-        <h2 className={styles.componentsTitle}>Explore Components</h2>
-
-        <ul className={styles.components}>
-          {[
-            {
-              name: "Transaction",
-              url: "https://docs.base.org/onchainkit/transaction/transaction",
-            },
-            {
-              name: "Swap",
-              url: "https://docs.base.org/onchainkit/swap/swap",
-            },
-            {
-              name: "Checkout",
-              url: "https://docs.base.org/onchainkit/checkout/checkout",
-            },
-            {
-              name: "Wallet",
-              url: "https://docs.base.org/onchainkit/wallet/wallet",
-            },
-            {
-              name: "Identity",
-              url: "https://docs.base.org/onchainkit/identity/identity",
-            },
-          ].map((component) => (
-            <li key={component.name}>
-              <a target="_blank" rel="noreferrer" href={component.url}>
-                {component.name}
-              </a>
-            </li>
-          ))}
-        </ul>
       </div>
     </div>
   );
