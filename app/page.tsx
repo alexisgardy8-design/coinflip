@@ -30,6 +30,8 @@ export default function Home() {
   const [pendingWinnings, setPendingWinnings] = useState<bigint>(BigInt(0));
   const [isCheckingResult, setIsCheckingResult] = useState(false);
   const [checkAttempts, setCheckAttempts] = useState(0);
+  const [fundAmount, setFundAmount] = useState<string>("");
+  const [showAdminPanel, setShowAdminPanel] = useState(false);
 
   const { data: txHash, isPending, writeContractAsync, error: writeError, reset } = useWriteContract();
   const publicClient = usePublicClient();
@@ -226,6 +228,32 @@ export default function Home() {
     }
   };
 
+  const onFundContract = async () => {
+    if (!fundAmount) return;
+    
+    try {
+      const fundHash = await writeContractAsync({
+        address: COUNTER_ADDRESS,
+        abi: COUNTER_ABI as Abi,
+        functionName: "fundContract",
+        args: [],
+        value: parseEther(fundAmount)
+      });
+      setLastTxHash(fundHash);
+
+      if (publicClient) {
+        const receipt = await publicClient.waitForTransactionReceipt({ hash: fundHash });
+        if (receipt.status === "success") {
+          alert(`Contract funded with ${fundAmount} ETH! 💰`);
+          setFundAmount("");
+        }
+      }
+    } catch (e) {
+      console.error("Fund error:", e);
+      alert("Failed to fund contract");
+    }
+  };
+
   // Calculs pour affichage
   const actualBetText = (() => {
     if (!betAmount) return null;
@@ -256,9 +284,92 @@ export default function Home() {
     <div className={styles.container}>
       <header className={styles.headerWrapper}>
         <Wallet />
+        {/* Admin toggle button */}
+        <button
+          onClick={() => setShowAdminPanel(!showAdminPanel)}
+          style={{
+            position: "fixed",
+            top: 20,
+            right: 20,
+            padding: "8px 16px",
+            background: "#4c1d95",
+            color: "#fff",
+            border: "none",
+            borderRadius: 8,
+            cursor: "pointer",
+            fontSize: 12,
+            fontWeight: 600,
+            zIndex: 1000
+          }}
+        >
+          🔧 Admin
+        </button>
       </header>
 
       <div className={styles.content}>
+        {/* Admin Panel */}
+        {showAdminPanel && (
+          <div style={{
+            marginBottom: 24,
+            width: "100%",
+            maxWidth: 420,
+            border: "2px solid #8b5cf6",
+            borderRadius: 16,
+            padding: 24,
+            background: "linear-gradient(135deg, #2d1b4e 0%, #1a1032 100%)",
+            boxShadow: "0 8px 32px rgba(139, 92, 246, 0.3)",
+          }}>
+            <h3 style={{ margin: 0, marginBottom: 16, fontSize: 18, fontWeight: 700, color: "#8b5cf6" }}>
+              🔧 Admin Panel
+            </h3>
+            <div style={{ marginBottom: 12 }}>
+              <label style={{ display: "block", fontSize: 14, marginBottom: 8, color: "#d1d5db", fontWeight: 500 }}>
+                Fund Contract (ETH)
+              </label>
+              <input
+                type="number"
+                inputMode="decimal"
+                min="0"
+                step="0.01"
+                placeholder="0.05"
+                value={fundAmount}
+                onChange={(e) => setFundAmount(e.target.value)}
+                style={{
+                  width: "100%",
+                  height: 44,
+                  borderRadius: 8,
+                  border: "2px solid #4c1d95",
+                  background: "#0f0820",
+                  color: "#fff",
+                  padding: "0 12px",
+                  outline: "none",
+                  fontSize: 14,
+                }}
+              />
+            </div>
+            <button
+              onClick={onFundContract}
+              disabled={!fundAmount || isPending}
+              style={{
+                width: "100%",
+                height: 44,
+                borderRadius: 10,
+                border: "none",
+                background: fundAmount && !isPending
+                  ? "linear-gradient(135deg, #8b5cf6 0%, #7c3aed 100%)"
+                  : "#4c1d95",
+                color: "#fff",
+                fontWeight: 600,
+                fontSize: 14,
+                cursor: fundAmount && !isPending ? "pointer" : "not-allowed",
+                transition: "all 0.2s ease",
+              }}
+            >
+              {isPending ? "Funding..." : "💰 Fund Contract"}
+            </button>
+          </div>
+        )}
+
         {/* Header avec titre personnalisé */}
         <div style={{ textAlign: "center", marginBottom: 32 }}>
           <div style={{ fontSize: 64, marginBottom: 8 }}>🪙</div>
