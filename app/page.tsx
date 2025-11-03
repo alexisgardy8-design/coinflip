@@ -34,6 +34,7 @@ export default function Home() {
   const [showAdminPanel, setShowAdminPanel] = useState(false);
   const [contractBalance, setContractBalance] = useState<bigint>(BigInt(0));
   const [isPaused, setIsPaused] = useState<boolean>(false);
+  const [isFlipping, setIsFlipping] = useState<boolean>(false);
 
   const { data: txHash, isPending, writeContractAsync, error: writeError, reset } = useWriteContract();
   const publicClient = usePublicClient();
@@ -50,29 +51,24 @@ export default function Home() {
       if (!publicClient) return;
       
       try {
-        const balance = await publicClient.readContract({
+        // 📊 Utiliser la fonction getStats pour réduire les appels RPC
+        const stats = await publicClient.readContract({
           address: COUNTER_ADDRESS,
           abi: COUNTER_ABI as Abi,
-          functionName: "getContractBalance"
-        }) as bigint;
-        setContractBalance(balance);
+          functionName: "getStats"
+        }) as [bigint, bigint, boolean];
         
-        const paused = await publicClient.readContract({
-          address: COUNTER_ADDRESS,
-          abi: COUNTER_ABI as Abi,
-          functionName: "paused"
-        }) as boolean;
+        const [_totalBets, balance, paused] = stats;
+        setContractBalance(balance);
         setIsPaused(paused);
       } catch (e) {
         console.error("Error loading contract info:", e);
       }
     };
     
+    // Charger au mount et après chaque pari/payout (pas d'interval constant)
     loadContractInfo();
-    const interval = setInterval(loadContractInfo, 10000); // Refresh every 10s
-    
-    return () => clearInterval(interval);
-  }, [publicClient]);
+  }, [publicClient, betResult]); // ⚡ Refresh seulement quand betResult change
 
   const onSelect = (c: "heads" | "tails") => {
     setChoice(c);
@@ -198,8 +194,84 @@ export default function Home() {
         const vrfReceipt = await publicClient.waitForTransactionReceipt({ hash: vrfHash });
         if (vrfReceipt.status === "success") {
           setStep("done");
-          // Commencer à vérifier le résultat du pari périodiquement
-          checkBetResult(currentBetId);
+          setIsFlipping(true); // 🪙 Démarrer l'animation
+          
+          // 🎯 PRIORITÉ 1: WebSocket - Écouter l'event CoinFlipResult en temps réel
+          let eventListenerActive = true;
+          let unwatchFn: (() => void) | null = null;
+          
+          try {
+            unwatchFn = publicClient.watchContractEvent({
+              address: COUNTER_ADDRESS,
+              abi: COUNTER_ABI as Abi,
+              eventName: "CoinFlipResult",
+              onLogs: async (logs) => {
+                if (!eventListenerActive) return;
+                
+                // Vérifier tous les events pour trouver celui qui correspond à notre joueur
+                for (const log of logs) {
+                  try {
+                    // Vérifier que c'est notre event en lisant le flip
+                    const flip = await publicClient.readContract({
+                      address: COUNTER_ADDRESS,
+                      abi: COUNTER_ABI as Abi,
+                      functionName: "flips",
+                      args: [currentBetId]
+                    }) as [string, boolean, bigint, boolean, boolean];
+                    
+                    const [player, choice, , settled, didWin] = flip;
+                    
+                    // Si le flip est settled, c'est notre résultat
+                    if (settled) {
+                      console.log("🎉 Event CoinFlipResult reçu instantanément!", log);
+                      eventListenerActive = false;
+                      if (unwatchFn) unwatchFn();
+                      
+                      const result = choice ? "Heads" : "Tails";
+                      const vrfResult = didWin ? result : (choice ? "Tails" : "Heads");
+                      
+                      setBetResult({ settled: true, didWin, result: vrfResult });
+                      setIsFlipping(false);
+                      setIsCheckingResult(false);
+                      
+                      if (didWin) {
+                        const winnings = await publicClient.readContract({
+                          address: COUNTER_ADDRESS,
+                          abi: COUNTER_ABI as Abi,
+                          functionName: "pendingWinnings",
+                          args: [player]
+                        }) as bigint;
+                        setPendingWinnings(winnings);
+                      }
+                      
+                      break;
+                    }
+                  } catch (err) {
+                    console.error("Error processing event log:", err);
+                  }
+                }
+              }
+            });
+          } catch (watchError) {
+            console.warn("⚠️ WebSocket setup failed, using polling only:", watchError);
+            eventListenerActive = false;
+          }
+          
+          // PRIORITÉ 2: Fallback polling après 10s si l'event n'est pas reçu
+          setTimeout(() => {
+            if (eventListenerActive) {
+              console.log("⚠️ WebSocket timeout, basculement sur polling...");
+              checkBetResult(currentBetId);
+            }
+          }, 10000);
+          
+          // Cleanup après 5 minutes max
+          setTimeout(() => {
+            if (eventListenerActive) {
+              eventListenerActive = false;
+              if (unwatchFn) unwatchFn();
+            }
+          }, 300000);
         } else {
           console.warn("VRF request tx failed");
           setStep("idle");
@@ -209,20 +281,20 @@ export default function Home() {
     } catch (e) {
       console.error("placeBet error:", e);
       setStep("idle");
+      setIsFlipping(false);
     }
   };
 
   const checkBetResult = async (checkBetId: bigint, attempt: number = 0) => {
     if (!publicClient) return;
     
-    // Timeout après 24 tentatives (2 minutes à 5s par tentative)
+    // Timeout après 24 tentatives avec exponential backoff
     const MAX_ATTEMPTS = 24;
     
     if (attempt >= MAX_ATTEMPTS) {
       console.warn("VRF timeout - max attempts reached");
       setIsCheckingResult(false);
-      // Garder step="done" pour afficher les options de retry
-      // Permettre à l'utilisateur de réessayer manuellement
+      setIsFlipping(false);
       return;
     }
     
@@ -236,7 +308,7 @@ export default function Home() {
         abi: COUNTER_ABI as Abi,
         functionName: "flips",
         args: [checkBetId]
-      }) as [string, boolean, bigint, boolean, boolean]; // [player, choice, betNet, settled, didWin]
+      }) as [string, boolean, bigint, boolean, boolean];
 
       const [player, choice, , settled, didWin] = flip;
       
@@ -250,17 +322,14 @@ export default function Home() {
       });
       
       if (settled) {
-        // Récupérer le résultat VRF pour l'afficher
-        const result = choice ? "Heads" : "Tails"; // choice du joueur
-        
-        // Le résultat réel du VRF est l'inverse si le joueur a perdu, sinon pareil
+        const result = choice ? "Heads" : "Tails";
         const vrfResult = didWin ? result : (choice ? "Tails" : "Heads");
         
-        console.log("Bet settled! Result:", vrfResult, "Win:", didWin);
+        console.log("✅ Bet settled! Result:", vrfResult, "Win:", didWin);
         
         setBetResult({ settled, didWin, result: vrfResult });
+        setIsFlipping(false);
         
-        // Si gagné, vérifier les gains en attente
         if (didWin && publicClient) {
           const winnings = await publicClient.readContract({
             address: COUNTER_ADDRESS,
@@ -275,13 +344,15 @@ export default function Home() {
         setIsCheckingResult(false);
         setCheckAttempts(0);
       } else {
-        // Pas encore résolu, réessayer dans 5 secondes
-        console.log("Bet not settled yet, retrying in 5s...");
-        setTimeout(() => checkBetResult(checkBetId, attempt + 1), 5000);
+        // ⚡ Exponential backoff: 5s → 7.5s → 11.25s → ... max 30s
+        const delay = Math.min(5000 * Math.pow(1.5, attempt), 30000);
+        console.log(`Bet not settled yet, retrying in ${(delay/1000).toFixed(1)}s...`);
+        setTimeout(() => checkBetResult(checkBetId, attempt + 1), delay);
       }
     } catch (e) {
       console.error("Error checking bet result:", e);
       setIsCheckingResult(false);
+      setIsFlipping(false);
       setCheckAttempts(0);
     }
   };
@@ -762,12 +833,35 @@ export default function Home() {
               border: "1px solid #4c1d95",
               textAlign: "center"
             }}>
-              <div style={{ fontSize: 32, marginBottom: 8 }}>🔮</div>
+              {/* 🪙 Animation de flip pendant l'attente */}
+              {isFlipping && (
+                <div style={{ marginBottom: 16 }}>
+                  <div style={{
+                    fontSize: 64,
+                    display: "inline-block",
+                    animation: "coinFlip 1s infinite ease-in-out"
+                  }}>
+                    🪙
+                  </div>
+                  <style jsx>{`
+                    @keyframes coinFlip {
+                      0% { transform: rotateY(0deg); }
+                      50% { transform: rotateY(180deg); }
+                      100% { transform: rotateY(360deg); }
+                    }
+                  `}</style>
+                </div>
+              )}
+              <div style={{ fontSize: 32, marginBottom: 8 }}>
+                {isFlipping ? "🔮" : "⏳"}
+              </div>
               <div style={{ fontSize: 14, marginBottom: 8, color: "#a78bfa", fontWeight: 600 }}>
-                ⏳ Waiting for Chainlink VRF...
+                {isFlipping ? "🪙 Flipping the coin..." : "⏳ Waiting for Chainlink VRF..."}
               </div>
               <div style={{ fontSize: 12, color: "#9ca3af", marginBottom: 8 }}>
-                This may take 1-2 minutes. The coin is flipping! 🪙
+                {isFlipping 
+                  ? "Generating provably fair randomness on-chain" 
+                  : "This may take 1-2 minutes. The coin is flipping! 🪙"}
               </div>
               {isCheckingResult && (
                 <div style={{ fontSize: 12, color: "#8b5cf6", marginTop: 8 }}>

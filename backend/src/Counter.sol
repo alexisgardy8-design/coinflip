@@ -113,12 +113,21 @@ contract Counter is VRFConsumerBaseV2Plus {
       require(msg.value >= MIN_BET, "Bet too small");
       require(msg.value <= MAX_BET, "Bet too large"); // 🛡️ Limite d'exposition
 
-      betId = nextBetId++;
+      // ⛽ Gas optimization: utiliser unchecked pour les calculs sûrs
+      unchecked {
+        betId = nextBetId;
+        nextBetId = betId + 1;
+      }
       
       // Calculer 98% pour le pari, 2% pour les frais
-      uint256 fee = (msg.value * 2) / 100;       // 2% de frais
-      uint256 betNet = msg.value - fee;          // 98% pour le pari
-      uint256 potentialPayout = betNet * 2;
+      uint256 fee;
+      uint256 betNet;
+      uint256 potentialPayout;
+      unchecked {
+        fee = (msg.value * 2) / 100;       // 2% de frais (safe: MAX_BET = 1 ether)
+        betNet = msg.value - fee;          // 98% pour le pari (safe: fee < msg.value)
+        potentialPayout = betNet * 2;      // Safe: betNet < MAX_BET
+      }
       
       // 🛡️ CRITIQUE: Vérifier que le contrat peut payer (balance AVANT de recevoir ce pari)
       // On doit soustraire msg.value car il est déjà inclus dans address(this).balance
@@ -287,11 +296,25 @@ contract Counter is VRFConsumerBaseV2Plus {
     if (paused) return false;
     if (betAmount < MIN_BET || betAmount > MAX_BET) return false;
     
-    uint256 fee = (betAmount * 2) / 100;
-    uint256 betNet = betAmount - fee;
-    uint256 potentialPayout = betNet * 2;
+    uint256 potentialPayout;
+    unchecked {
+      uint256 fee = (betAmount * 2) / 100;
+      uint256 betNet = betAmount - fee;
+      potentialPayout = betNet * 2;
+    }
     
     return address(this).balance >= potentialPayout;
+  }
+  
+  // 📊 Fonction pour obtenir des stats (utile pour le frontend)
+  function getStats() external view returns (
+    uint256 totalBets,
+    uint256 contractBalance,
+    bool isPaused
+  ) {
+    totalBets = nextBetId - 1;
+    contractBalance = address(this).balance;
+    isPaused = paused;
   }
   
   // 🛡️ Fonction d'urgence admin: retirer les fonds en cas de bug critique (seulement si en pause)
