@@ -94,14 +94,40 @@ export default function Home() {
           return;
         }
 
-        // Récupérer betId depuis nextBetId - 1
-        const nextBetIdFromContract = await publicClient.readContract({
-          address: COUNTER_ADDRESS,
-          abi: COUNTER_ABI as Abi,
-          functionName: "nextBetId"
-        }) as bigint;
+        // 🎯 Récupérer betId depuis l'event BetPlaced dans les logs
+        // L'event BetPlaced a bettor et betId comme topics indexés
+        // topics[0] = event signature hash
+        // topics[1] = bettor (indexed)
+        // topics[2] = betId (indexed) ← C'EST CE QU'ON VEUT
         
-        const currentBetId = nextBetIdFromContract - BigInt(1);
+        let currentBetId: bigint;
+        const betPlacedLog = receipt.logs.find(
+          (log) => {
+            try {
+              // Vérifier si c'est l'event BetPlaced en comparant l'adresse
+              return log.address.toLowerCase() === COUNTER_ADDRESS.toLowerCase() && 
+                     log.topics.length >= 3; // Au moins 3 topics (signature + 2 indexed params)
+            } catch {
+              return false;
+            }
+          }
+        );
+        
+        if (betPlacedLog && betPlacedLog.topics[2]) {
+          // betId est le 2ème topic indexé (topics[2])
+          currentBetId = BigInt(betPlacedLog.topics[2]);
+          console.log("✅ BetId récupéré depuis l'event:", currentBetId.toString());
+        } else {
+          // Fallback: lire nextBetId - 1 (moins fiable en cas de concurrence)
+          console.warn("⚠️ Impossible de lire betId depuis l'event, utilisation du fallback");
+          const nextBetIdFromContract = await publicClient.readContract({
+            address: COUNTER_ADDRESS,
+            abi: COUNTER_ABI as Abi,
+            functionName: "nextBetId"
+          }) as bigint;
+          currentBetId = nextBetIdFromContract - BigInt(1);
+        }
+        
         setBetId(currentBetId);
         
         // Étape 2: requestFlipResult (déclenche le VRF)

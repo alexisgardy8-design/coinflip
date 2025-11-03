@@ -9,13 +9,11 @@ contract Counter is VRFConsumerBaseV2Plus {
     uint256 public number;
     event RequestSent(uint256 requestId, uint32 numWords);
     event RequestFulfilled(uint256 requestId, uint256[] randomWords);
-  event PayoutSent(address counter, uint256 gain);
-    event BetPlaced(address indexed bettor, uint256 amount, bool choice);
+    event PayoutSent(address counter, uint256 gain);
+    event BetPlaced(address indexed bettor, uint256 indexed betId, uint256 amount, bool choice);
     event CoinFlipRequested(uint256 indexed requestId, address indexed player);
     event CoinFlipResult(uint256 indexed requestId, address indexed player, bool didWin, uint256 randomWord);
-  event FeePaid(address indexed recipient, uint256 amount);
-
-    struct RequestStatus {
+  event FeePaid(address indexed recipient, uint256 amount);    struct RequestStatus {
         bool fulfilled; // whether the request has been successfully fulfilled
         bool exists; // whether a requestId exists
         uint256[] randomWords;
@@ -114,7 +112,7 @@ contract Counter is VRFConsumerBaseV2Plus {
       
       betTimestamp[betId] = block.timestamp; // 🛡️ Pour timeout cancellation
 
-      emit BetPlaced(msg.sender, betNet, choice);
+      emit BetPlaced(msg.sender, betId, betNet, choice);
 
       return betId;
   }
