@@ -35,7 +35,6 @@ contract Counter is VRFConsumerBaseV2Plus, Pausable {
       uint256 betNet;   // mise nette
       bool settled;
       bool didWin;
-      uint256 timestamp; // Pour timeout cancellation
     }
 
     mapping(uint256 => Flip) public flips;              // betId => Flip
@@ -43,6 +42,7 @@ contract Counter is VRFConsumerBaseV2Plus, Pausable {
     mapping(address => uint256) public pendingWinnings; // joueur => gains à récupérer
     mapping(uint256 => uint256) private betFees;        // betId => frais (2%) à envoyer après settlement
     mapping(uint256 => bool) public betHasPendingRequest; // betId => hasActiveRequest (protection double request)
+    mapping(uint256 => uint256) public betTimestamp;    // betId => timestamp pour timeout (séparé de la struct)
    
     uint256 public nextBetId = 1;
 
@@ -112,15 +112,16 @@ contract Counter is VRFConsumerBaseV2Plus, Pausable {
        // ✅ CRITIQUE : Vérifier que le contrat peut payer
     require(address(this).balance >= potentialPayout, "Insufficient contract balance");
       
-      // Enregistre le pari avec la mise nette (98%) et timestamp
+      // Enregistre le pari avec la mise nette (98%)
       flips[betId] = Flip({
         player: msg.sender,
         choice: choice,
         betNet: betNet,
         settled: false,
-        didWin: false,
-        timestamp: block.timestamp
+        didWin: false
       });
+      
+      betTimestamp[betId] = block.timestamp; // Timestamp séparé pour ne pas changer la struct
 
       emit BetPlaced(msg.sender, betNet, choice);
 
@@ -236,7 +237,7 @@ contract Counter is VRFConsumerBaseV2Plus, Pausable {
     Flip storage f = flips[betId];
     require(f.player == msg.sender, "Not your bet");
     require(!f.settled, "Already settled");
-    require(block.timestamp >= f.timestamp + BET_TIMEOUT, "Timeout not reached");
+    require(block.timestamp >= betTimestamp[betId] + BET_TIMEOUT, "Timeout not reached");
     
     // ✅ CEI Pattern: Checks-Effects-Interactions
     // 1. Checks (done above)

@@ -95,6 +95,25 @@
   },
   {
     "type": "function",
+    "name": "betTimestamp",
+    "inputs": [
+      {
+        "name": "",
+        "type": "uint256",
+        "internalType": "uint256"
+      }
+    ],
+    "outputs": [
+      {
+        "name": "",
+        "type": "uint256",
+        "internalType": "uint256"
+      }
+    ],
+    "stateMutability": "view"
+  },
+  {
+    "type": "function",
     "name": "callbackGasLimit",
     "inputs": [],
     "outputs": [
@@ -174,11 +193,6 @@
         "name": "didWin",
         "type": "bool",
         "internalType": "bool"
-      },
-      {
-        "name": "timestamp",
-        "type": "uint256",
-        "internalType": "uint256"
       }
     ],
     "stateMutability": "view"
