@@ -66,6 +66,8 @@ contract Counter is VRFConsumerBaseV2Plus, Pausable {
     constructor( uint256 subscriptionId, address _feeRecipiant) 
         VRFConsumerBaseV2Plus(0x5C210eF41CD1a72de73bF76eC39637bB0d3d7BEE)
     {
+        require(_feeRecipiant != address(0), "Invalid fee recipient");
+        require(subscriptionId > 0, "Invalid subscription ID");
         i_admin = msg.sender;
         s_subscriptionId = subscriptionId;
         feeRecipient = _feeRecipiant;
@@ -76,7 +78,7 @@ contract Counter is VRFConsumerBaseV2Plus, Pausable {
     }
 
 
-    function requestRandomWords() external onlyOwner returns (uint256 requestId) {
+    function requestRandomWords() external onlyAdmin returns (uint256 requestId) {
       // Will revert if subscription is not set and funded.
       requestId = s_vrfCoordinator.requestRandomWords(
         VRFV2PlusClient.RandomWordsRequest({
@@ -150,6 +152,7 @@ contract Counter is VRFConsumerBaseV2Plus, Pausable {
     );
 
     // Lie requestId au betId
+    require(requestToBet[requestId] == 0, "Request ID collision"); // Protection collision
     requestToBet[requestId] = betId;
 
     s_requests[requestId] = RequestStatus({randomWords: new uint256[](0), exists: true, fulfilled: false});
@@ -183,6 +186,8 @@ contract Counter is VRFConsumerBaseV2Plus, Pausable {
         
         if (didWin) {
             uint256 winAmount = f.betNet * 2;
+            // Protection overflow (redondant en 0.8+ mais explicite)
+            require(pendingWinnings[f.player] + winAmount >= pendingWinnings[f.player], "Overflow");
             pendingWinnings[f.player] += winAmount;
         }
         
@@ -233,12 +238,15 @@ contract Counter is VRFConsumerBaseV2Plus, Pausable {
     require(!f.settled, "Already settled");
     require(block.timestamp >= f.timestamp + BET_TIMEOUT, "Timeout not reached");
     
-    // Rembourser bet + frais à l'utilisateur
+    // ✅ CEI Pattern: Checks-Effects-Interactions
+    // 1. Checks (done above)
+    // 2. Effects
     uint256 refundAmount = f.betNet + betFees[betId];
     f.settled = true; // Marquer comme settled pour éviter double refund
     betHasPendingRequest[betId] = false; // Libérer le flag
     betFees[betId] = 0; // Clear fees
     
+    // 3. Interactions
     (bool success, ) = payable(msg.sender).call{value: refundAmount}("");
     require(success, "Refund failed");
   }
@@ -273,7 +281,7 @@ contract Counter is VRFConsumerBaseV2Plus, Pausable {
     }
 
   // Fonction pour fund le contrat afin de payer les gains des joueurs
-  function fundContract() external payable {
+  function fundContract() external payable whenNotPaused {
     require(msg.value > 0, "Must send ETH to fund");
     emit ContractFunded(msg.sender, msg.value);
   }
