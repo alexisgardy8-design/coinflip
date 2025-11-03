@@ -13,7 +13,9 @@ contract Counter is VRFConsumerBaseV2Plus {
     event BetPlaced(address indexed bettor, uint256 indexed betId, uint256 amount, bool choice);
     event CoinFlipRequested(uint256 indexed requestId, address indexed player);
     event CoinFlipResult(uint256 indexed requestId, address indexed player, bool didWin, uint256 randomWord);
-  event FeePaid(address indexed recipient, uint256 amount);    struct RequestStatus {
+  event FeePaid(address indexed recipient, uint256 amount);
+  event FeeTransferFailed(address indexed recipient, uint256 amount);
+    struct RequestStatus {
         bool fulfilled; // whether the request has been successfully fulfilled
         bool exists; // whether a requestId exists
         uint256[] randomWords;
@@ -49,6 +51,9 @@ contract Counter is VRFConsumerBaseV2Plus {
     // 🛡️ Pause d'urgence
     bool public paused = false;
     address public immutable admin;
+    
+    // 🛡️ Accumulated fees pour récupération si transfert échoue
+    uint256 public accumulatedFees;
 
     uint256 public s_subscriptionId;
     uint256[] public requestIds;
@@ -90,25 +95,6 @@ contract Counter is VRFConsumerBaseV2Plus {
     
     event PausedStateChanged(bool paused);
 
-
-    function requestRandomWords() external onlyOwner returns (uint256 requestId) {
-      // Will revert if subscription is not set and funded.
-      requestId = s_vrfCoordinator.requestRandomWords(
-        VRFV2PlusClient.RandomWordsRequest({
-          keyHash: keyHash,
-          subId: s_subscriptionId,
-          requestConfirmations: requestConfirmations,
-          callbackGasLimit: callbackGasLimit,
-          numWords: numWords,
-          extraArgs: VRFV2PlusClient._argsToBytes(VRFV2PlusClient.ExtraArgsV1({nativePayment: false}))
-        })
-      );
-      s_requests[requestId] = RequestStatus({randomWords: new uint256[](0), exists: true, fulfilled: false});
-      requestIds.push(requestId);
-      lastRequestId = requestId;
-      emit RequestSent(requestId, numWords);
-      return requestId;
-    }
     function placeBet(bool choice) external payable whenNotPaused returns (uint256 betId) {
       require(msg.value >= MIN_BET, "Bet too small");
       require(msg.value <= MAX_BET, "Bet too large"); // 🛡️ Limite d'exposition
@@ -217,13 +203,19 @@ contract Counter is VRFConsumerBaseV2Plus {
             pendingWinnings[f.player] += winAmount;
         }
         
-        // Envoyer les frais (2%) au feeRecipient après settlement
+        // 🛡️ Envoyer les frais (2%) au feeRecipient après settlement
+        // NE JAMAIS bloquer settlement si transfert échoue
         uint256 fee = betFees[betId];
         if (fee > 0) {
             betFees[betId] = 0; // Clear fees
             (bool ok, ) = payable(feeRecipient).call{value: fee}("");
-            require(ok, "Fee transfer failed");
-            emit FeePaid(feeRecipient, fee);
+            if (ok) {
+                emit FeePaid(feeRecipient, fee);
+            } else {
+                // Accumuler pour récupération manuelle par admin
+                accumulatedFees += fee;
+                emit FeeTransferFailed(feeRecipient, fee);
+            }
         }
         
         emit CoinFlipResult(_requestId, f.player, didWin, word);
@@ -264,13 +256,15 @@ contract Counter is VRFConsumerBaseV2Plus {
     require(!f.settled, "Already settled");
     require(block.timestamp >= betTimestamp[betId] + BET_TIMEOUT, "Timeout not reached");
     
-    // 🛡️ CEI Pattern: Checks-Effects-Interactions
+    // 🛡️ CEI Pattern strict: Effects AVANT de calculer le montant
     // 1. Checks (done above)
-    // 2. Effects
+    // 2. Effects (marquer settled EN PREMIER pour protection reentrancy)
+    f.settled = true;
+    betHasPendingRequest[betId] = false;
+    
+    // Calculer le montant APRÈS avoir marqué comme settled
     uint256 refundAmount = f.betNet + betFees[betId];
-    f.settled = true; // Marquer comme settled pour éviter double refund
-    betHasPendingRequest[betId] = false; // Libérer le flag
-    betFees[betId] = 0; // Clear fees
+    betFees[betId] = 0;
     
     // 3. Interactions
     (bool success, ) = payable(msg.sender).call{value: refundAmount}("");
@@ -280,8 +274,20 @@ contract Counter is VRFConsumerBaseV2Plus {
   
   event BetCancelled(uint256 indexed betId, address indexed player, uint256 refundAmount);
 
+  // 🛡️ Fonction admin pour récupérer les frais accumulés qui n'ont pas pu être transférés
+  function withdrawAccumulatedFees() external {
+    require(msg.sender == admin, "Admin only");
+    uint256 amount = accumulatedFees;
+    require(amount > 0, "No accumulated fees");
+    
+    accumulatedFees = 0; // CEI pattern
+    (bool success, ) = payable(feeRecipient).call{value: amount}("");
+    require(success, "Fee withdrawal failed");
+    emit FeePaid(feeRecipient, amount);
+  }
+
   // Fonction pour fund le contrat afin de payer les gains des joueurs
-  function fundContract() external payable {
+  function fundContract() external payable whenNotPaused {
     require(msg.value > 0, "Must send ETH to fund");
     emit ContractFunded(msg.sender, msg.value);
   }
