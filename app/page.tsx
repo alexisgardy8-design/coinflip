@@ -32,6 +32,8 @@ export default function Home() {
   const [checkAttempts, setCheckAttempts] = useState(0);
   const [fundAmount, setFundAmount] = useState<string>("");
   const [showAdminPanel, setShowAdminPanel] = useState(false);
+  const [contractBalance, setContractBalance] = useState<bigint>(BigInt(0));
+  const [isPaused, setIsPaused] = useState<boolean>(false);
 
   const { data: txHash, isPending, writeContractAsync, error: writeError, reset } = useWriteContract();
   const publicClient = usePublicClient();
@@ -41,6 +43,36 @@ export default function Home() {
       setMiniAppReady();
     }
   }, [setMiniAppReady, isMiniAppReady]);
+  
+  // 🛡️ Charger le balance du contrat et le statut de pause
+  useEffect(() => {
+    const loadContractInfo = async () => {
+      if (!publicClient) return;
+      
+      try {
+        const balance = await publicClient.readContract({
+          address: COUNTER_ADDRESS,
+          abi: COUNTER_ABI as Abi,
+          functionName: "getContractBalance"
+        }) as bigint;
+        setContractBalance(balance);
+        
+        const paused = await publicClient.readContract({
+          address: COUNTER_ADDRESS,
+          abi: COUNTER_ABI as Abi,
+          functionName: "paused"
+        }) as boolean;
+        setIsPaused(paused);
+      } catch (e) {
+        console.error("Error loading contract info:", e);
+      }
+    };
+    
+    loadContractInfo();
+    const interval = setInterval(loadContractInfo, 10000); // Refresh every 10s
+    
+    return () => clearInterval(interval);
+  }, [publicClient]);
 
   const onSelect = (c: "heads" | "tails") => {
     setChoice(c);
@@ -61,6 +93,28 @@ export default function Home() {
     if (amountNum > 1) {
       alert("Maximum bet is 1 ETH");
       return;
+    }
+    
+    // 🛡️ VALIDATION: Vérifier que le contrat peut payer
+    if (publicClient) {
+      try {
+        const desiredAmountWei = parseEther(amount as `${number}`);
+        const canAccept = await publicClient.readContract({
+          address: COUNTER_ADDRESS,
+          abi: COUNTER_ABI as Abi,
+          functionName: "canAcceptBet",
+          args: [desiredAmountWei]
+        }) as boolean;
+        
+        if (!canAccept) {
+          alert("⚠️ Contract cannot accept this bet (insufficient balance or paused). Please try a smaller amount or contact admin.");
+          return;
+        }
+      } catch (e) {
+        console.error("Error checking contract balance:", e);
+        alert("Unable to verify contract balance. Please try again.");
+        return;
+      }
     }
     
     try {
@@ -414,6 +468,28 @@ export default function Home() {
           <p style={{ fontSize: 14, color: "#9ca3af", margin: 0 }}>
             Provably fair • Powered by Chainlink VRF
           </p>
+          
+          {/* 🛡️ Affichage du balance du contrat et statut */}
+          <div style={{ 
+            marginTop: 16, 
+            padding: "8px 16px", 
+            borderRadius: 8, 
+            background: isPaused ? "#991b1b" : "#1a1032",
+            border: isPaused ? "1px solid #ef4444" : "1px solid #4c1d95",
+            display: "inline-block"
+          }}>
+            {isPaused && (
+              <div style={{ fontSize: 12, color: "#fca5a5", marginBottom: 4, fontWeight: 600 }}>
+                ⚠️ Contract Paused
+              </div>
+            )}
+            <div style={{ fontSize: 12, color: "#a78bfa" }}>
+              💰 Contract Balance: {(Number(contractBalance) / 1e18).toFixed(4)} ETH
+            </div>
+            <div style={{ fontSize: 11, color: "#6b7280", marginTop: 2 }}>
+              Max payout: {(Number(contractBalance) / 2e18).toFixed(4)} ETH
+            </div>
+          </div>
         </div>
 
         <div style={{

@@ -45,6 +45,10 @@ contract Counter is VRFConsumerBaseV2Plus {
     // 🛡️ Constantes de sécurité
     uint256 public constant MAX_BET = 1 ether;
     uint256 public constant BET_TIMEOUT = 1 hours;
+    
+    // 🛡️ Pause d'urgence
+    bool public paused = false;
+    address public immutable admin;
 
     uint256 public s_subscriptionId;
     uint256[] public requestIds;
@@ -63,7 +67,28 @@ contract Counter is VRFConsumerBaseV2Plus {
         require(subscriptionId > 0, "Invalid subscription ID");
         s_subscriptionId = subscriptionId;
         feeRecipient = _feeRecipiant;
+        admin = msg.sender; // 🛡️ Admin pour pause d'urgence
     }
+    
+    // 🛡️ Modifier pour restreindre les fonctions admin
+    modifier onlyAdmin() {
+        require(msg.sender == admin, "Only admin");
+        _;
+    }
+    
+    // 🛡️ Modifier pour empêcher les paris quand le contrat est en pause
+    modifier whenNotPaused() {
+        require(!paused, "Contract is paused");
+        _;
+    }
+    
+    // 🛡️ Fonction de pause d'urgence
+    function setPaused(bool _paused) external onlyAdmin {
+        paused = _paused;
+        emit PausedStateChanged(_paused);
+    }
+    
+    event PausedStateChanged(bool paused);
 
 
     function requestRandomWords() external onlyOwner returns (uint256 requestId) {
@@ -84,7 +109,7 @@ contract Counter is VRFConsumerBaseV2Plus {
       emit RequestSent(requestId, numWords);
       return requestId;
     }
-    function placeBet(bool choice) external payable returns (uint256 betId) {
+    function placeBet(bool choice) external payable whenNotPaused returns (uint256 betId) {
       require(msg.value >= MIN_BET, "Bet too small");
       require(msg.value <= MAX_BET, "Bet too large"); // 🛡️ Limite d'exposition
 
@@ -95,8 +120,10 @@ contract Counter is VRFConsumerBaseV2Plus {
       uint256 betNet = msg.value - fee;          // 98% pour le pari
       uint256 potentialPayout = betNet * 2;
       
-      // 🛡️ CRITIQUE: Vérifier que le contrat peut payer
-      require(address(this).balance >= potentialPayout, "Insufficient contract balance");
+      // 🛡️ CRITIQUE: Vérifier que le contrat peut payer (balance AVANT de recevoir ce pari)
+      // On doit soustraire msg.value car il est déjà inclus dans address(this).balance
+      uint256 contractBalanceBeforeBet = address(this).balance - msg.value;
+      require(contractBalanceBeforeBet >= potentialPayout, "Insufficient contract balance");
       
       // Stocker les frais pour ce bet (seront envoyés après settlement)
       betFees[betId] = fee;
@@ -118,7 +145,7 @@ contract Counter is VRFConsumerBaseV2Plus {
   }
 
   // Nouvelle fonction: déclenche le VRF pour un pari existant
-  function requestFlipResult(uint256 betId) external returns (uint256 requestId) {
+  function requestFlipResult(uint256 betId) external whenNotPaused returns (uint256 requestId) {
     Flip storage f = flips[betId];
     require(f.player != address(0), "Bet does not exist");
     require(f.player == msg.sender, "Not your bet");
@@ -221,12 +248,6 @@ contract Counter is VRFConsumerBaseV2Plus {
     return amount;
   }
 
-  function isWinner(uint256 randomWord, bool choice) public pure returns (bool) {
-        // Par exemple, si le joueur choisit true pour pile et false pour face
-        bool coinFlipResult = (randomWord % 2 == 0); // true pour pile, false pour face
-        return (coinFlipResult == choice);
-    }
-
   // 🛡️ SÉCURITÉ: Annulation d'urgence si VRF timeout (1 heure)
   function cancelBetAfterTimeout(uint256 betId) external {
     Flip storage f = flips[betId];
@@ -245,7 +266,10 @@ contract Counter is VRFConsumerBaseV2Plus {
     // 3. Interactions
     (bool success, ) = payable(msg.sender).call{value: refundAmount}("");
     require(success, "Refund failed");
+    emit BetCancelled(betId, msg.sender, refundAmount);
   }
+  
+  event BetCancelled(uint256 indexed betId, address indexed player, uint256 refundAmount);
 
   // Fonction pour fund le contrat afin de payer les gains des joueurs
   function fundContract() external payable {
@@ -257,6 +281,31 @@ contract Counter is VRFConsumerBaseV2Plus {
   function getContractBalance() external view returns (uint256) {
     return address(this).balance;
   }
+  
+  // 🛡️ Fonction view pour vérifier si un pari peut être accepté (pour le frontend)
+  function canAcceptBet(uint256 betAmount) external view returns (bool) {
+    if (paused) return false;
+    if (betAmount < MIN_BET || betAmount > MAX_BET) return false;
+    
+    uint256 fee = (betAmount * 2) / 100;
+    uint256 betNet = betAmount - fee;
+    uint256 potentialPayout = betNet * 2;
+    
+    return address(this).balance >= potentialPayout;
+  }
+  
+  // 🛡️ Fonction d'urgence admin: retirer les fonds en cas de bug critique (seulement si en pause)
+  function emergencyWithdraw() external onlyAdmin {
+    require(paused, "Contract must be paused");
+    uint256 balance = address(this).balance;
+    require(balance > 0, "No balance");
+    
+    (bool success, ) = payable(admin).call{value: balance}("");
+    require(success, "Withdraw failed");
+    emit EmergencyWithdraw(admin, balance);
+  }
+  
+  event EmergencyWithdraw(address indexed admin, uint256 amount);
 
   // Événement pour tracker les dépôts
   event ContractFunded(address indexed funder, uint256 amount);
