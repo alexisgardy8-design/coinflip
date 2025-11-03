@@ -3,11 +3,9 @@ pragma solidity ^0.8.20;
 
 import {VRFConsumerBaseV2Plus} from "@chainlink/contracts/src/v0.8/vrf/dev/VRFConsumerBaseV2Plus.sol";
 import {VRFV2PlusClient} from "@chainlink/contracts/src/v0.8/vrf/dev/libraries/VRFV2PlusClient.sol";
-import {Pausable} from "@openzeppelin/contracts/utils/Pausable.sol";
 
 
-contract Counter is VRFConsumerBaseV2Plus, Pausable {
-    address private immutable i_admin; // Admin pour pause/unpause et gestion
+contract Counter is VRFConsumerBaseV2Plus {
     uint256 public number;
     event RequestSent(uint256 requestId, uint32 numWords);
     event RequestFulfilled(uint256 requestId, uint256[] randomWords);
@@ -25,9 +23,7 @@ contract Counter is VRFConsumerBaseV2Plus, Pausable {
     mapping(uint256 => RequestStatus) public s_requests; 
   
     uint256 public constant MIN_BET = 0.001 ether;
-    uint256 public constant MAX_BET = 1 ether; // Limite d'exposition par pari
-    uint256 public constant BET_TIMEOUT = 1 hours; // Délai pour annulation d'urgence
-    address public feeRecipient; // Modifiable par owner
+    address public immutable feeRecipient;
 
     struct Flip {
       address player;
@@ -41,10 +37,16 @@ contract Counter is VRFConsumerBaseV2Plus, Pausable {
     mapping(uint256 => uint256) public requestToBet;    // requestId => betId
     mapping(address => uint256) public pendingWinnings; // joueur => gains à récupérer
     mapping(uint256 => uint256) private betFees;        // betId => frais (2%) à envoyer après settlement
-    mapping(uint256 => bool) public betHasPendingRequest; // betId => hasActiveRequest (protection double request)
-    mapping(uint256 => uint256) public betTimestamp;    // betId => timestamp pour timeout (séparé de la struct)
+    
+    // 🛡️ Mappings de sécurité (n'affectent pas la struct Flip)
+    mapping(uint256 => bool) public betHasPendingRequest; // Protection double VRF request
+    mapping(uint256 => uint256) public betTimestamp;      // Pour timeout cancellation
    
     uint256 public nextBetId = 1;
+    
+    // 🛡️ Constantes de sécurité
+    uint256 public constant MAX_BET = 1 ether;
+    uint256 public constant BET_TIMEOUT = 1 hours;
 
     uint256 public s_subscriptionId;
     uint256[] public requestIds;
@@ -58,27 +60,15 @@ contract Counter is VRFConsumerBaseV2Plus, Pausable {
     uint16 public requestConfirmations = 3;
     uint32 public numWords =  1;
 
-    modifier onlyAdmin() {
-        require(msg.sender == i_admin, "Not admin");
-        _;
-    }
-
-    constructor( uint256 subscriptionId, address _feeRecipiant) 
-        VRFConsumerBaseV2Plus(0x5C210eF41CD1a72de73bF76eC39637bB0d3d7BEE)
-    {
+    constructor( uint256 subscriptionId, address _feeRecipiant) VRFConsumerBaseV2Plus(0x5C210eF41CD1a72de73bF76eC39637bB0d3d7BEE) {
         require(_feeRecipiant != address(0), "Invalid fee recipient");
         require(subscriptionId > 0, "Invalid subscription ID");
-        i_admin = msg.sender;
         s_subscriptionId = subscriptionId;
         feeRecipient = _feeRecipiant;
     }
 
-    function admin() public view returns (address) {
-        return i_admin;
-    }
 
-
-    function requestRandomWords() external onlyAdmin returns (uint256 requestId) {
+    function requestRandomWords() external onlyOwner returns (uint256 requestId) {
       // Will revert if subscription is not set and funded.
       requestId = s_vrfCoordinator.requestRandomWords(
         VRFV2PlusClient.RandomWordsRequest({
@@ -96,9 +86,9 @@ contract Counter is VRFConsumerBaseV2Plus, Pausable {
       emit RequestSent(requestId, numWords);
       return requestId;
     }
-    function placeBet(bool choice) external payable whenNotPaused returns (uint256 betId) {
+    function placeBet(bool choice) external payable returns (uint256 betId) {
       require(msg.value >= MIN_BET, "Bet too small");
-      require(msg.value <= MAX_BET, "Bet too large"); // Protection exposition
+      require(msg.value <= MAX_BET, "Bet too large"); // 🛡️ Limite d'exposition
 
       betId = nextBetId++;
       
@@ -106,11 +96,12 @@ contract Counter is VRFConsumerBaseV2Plus, Pausable {
       uint256 fee = (msg.value * 2) / 100;       // 2% de frais
       uint256 betNet = msg.value - fee;          // 98% pour le pari
       uint256 potentialPayout = betNet * 2;
+      
+      // 🛡️ CRITIQUE: Vérifier que le contrat peut payer
+      require(address(this).balance >= potentialPayout, "Insufficient contract balance");
+      
       // Stocker les frais pour ce bet (seront envoyés après settlement)
       betFees[betId] = fee;
-
-       // ✅ CRITIQUE : Vérifier que le contrat peut payer
-    require(address(this).balance >= potentialPayout, "Insufficient contract balance");
       
       // Enregistre le pari avec la mise nette (98%)
       flips[betId] = Flip({
@@ -121,7 +112,7 @@ contract Counter is VRFConsumerBaseV2Plus, Pausable {
         didWin: false
       });
       
-      betTimestamp[betId] = block.timestamp; // Timestamp séparé pour ne pas changer la struct
+      betTimestamp[betId] = block.timestamp; // 🛡️ Pour timeout cancellation
 
       emit BetPlaced(msg.sender, betNet, choice);
 
@@ -129,14 +120,14 @@ contract Counter is VRFConsumerBaseV2Plus, Pausable {
   }
 
   // Nouvelle fonction: déclenche le VRF pour un pari existant
-  function requestFlipResult(uint256 betId) external whenNotPaused returns (uint256 requestId) {
+  function requestFlipResult(uint256 betId) external returns (uint256 requestId) {
     Flip storage f = flips[betId];
     require(f.player != address(0), "Bet does not exist");
     require(f.player == msg.sender, "Not your bet");
     require(!f.settled, "Already settled");
-    require(!betHasPendingRequest[betId], "Request already pending"); // Protection double request
+    require(!betHasPendingRequest[betId], "Request already pending"); // 🛡️ Protection double request
 
-    betHasPendingRequest[betId] = true; // Marquer comme en cours
+    betHasPendingRequest[betId] = true; // 🛡️ Marquer comme en cours
 
     // Demande VRF (Base Sepolia) financé par LINK
     requestId = s_vrfCoordinator.requestRandomWords(
@@ -153,7 +144,7 @@ contract Counter is VRFConsumerBaseV2Plus, Pausable {
     );
 
     // Lie requestId au betId
-    require(requestToBet[requestId] == 0, "Request ID collision"); // Protection collision
+    require(requestToBet[requestId] == 0, "Request ID collision"); // 🛡️ Protection collision
     requestToBet[requestId] = betId;
 
     s_requests[requestId] = RequestStatus({randomWords: new uint256[](0), exists: true, fulfilled: false});
@@ -177,7 +168,7 @@ contract Counter is VRFConsumerBaseV2Plus, Pausable {
     Flip storage f = flips[betId];
     
     if (f.player != address(0) && !f.settled) {
-        betHasPendingRequest[betId] = false; // Libérer le flag après settlement
+        betHasPendingRequest[betId] = false; // 🛡️ Libérer le flag après settlement
         
         uint256 word = _randomWords[0];
         bool flipSide = (word % 2 == 0);
@@ -187,7 +178,7 @@ contract Counter is VRFConsumerBaseV2Plus, Pausable {
         
         if (didWin) {
             uint256 winAmount = f.betNet * 2;
-            // Protection overflow (redondant en 0.8+ mais explicite)
+            // 🛡️ Protection overflow (redondant en 0.8+ mais explicite)
             require(pendingWinnings[f.player] + winAmount >= pendingWinnings[f.player], "Overflow");
             pendingWinnings[f.player] += winAmount;
         }
@@ -232,14 +223,20 @@ contract Counter is VRFConsumerBaseV2Plus, Pausable {
     return amount;
   }
 
-  // 🛡️ SÉCURITÉ OPTIONNELLE: Annulation d'urgence si VRF timeout
+  function isWinner(uint256 randomWord, bool choice) public pure returns (bool) {
+        // Par exemple, si le joueur choisit true pour pile et false pour face
+        bool coinFlipResult = (randomWord % 2 == 0); // true pour pile, false pour face
+        return (coinFlipResult == choice);
+    }
+
+  // 🛡️ SÉCURITÉ: Annulation d'urgence si VRF timeout (1 heure)
   function cancelBetAfterTimeout(uint256 betId) external {
     Flip storage f = flips[betId];
     require(f.player == msg.sender, "Not your bet");
     require(!f.settled, "Already settled");
     require(block.timestamp >= betTimestamp[betId] + BET_TIMEOUT, "Timeout not reached");
     
-    // ✅ CEI Pattern: Checks-Effects-Interactions
+    // 🛡️ CEI Pattern: Checks-Effects-Interactions
     // 1. Checks (done above)
     // 2. Effects
     uint256 refundAmount = f.betNet + betFees[betId];
@@ -252,37 +249,8 @@ contract Counter is VRFConsumerBaseV2Plus, Pausable {
     require(success, "Refund failed");
   }
 
-  // 🛡️ SÉCURITÉ OPTIONNELLE: Admin peut mettre en pause en cas d'urgence
-  function pause() external onlyAdmin {
-    _pause();
-  }
-
-  function unpause() external onlyAdmin {
-    _unpause();
-  }
-
-  // 🛡️ SÉCURITÉ OPTIONNELLE: Admin peut modifier le feeRecipient
-  function updateFeeRecipient(address newRecipient) external onlyAdmin {
-    require(newRecipient != address(0), "Invalid address");
-    feeRecipient = newRecipient;
-  }
-
-  // 🛡️ SÉCURITÉ OPTIONNELLE: Admin peut retirer les fonds en cas d'urgence (après pause)
-  function emergencyWithdraw() external onlyAdmin {
-    require(paused(), "Must be paused first");
-    uint256 balance = address(this).balance;
-    (bool success, ) = payable(i_admin).call{value: balance}("");
-    require(success, "Withdraw failed");
-  }
-
-  function isWinner(uint256 randomWord, bool choice) public pure returns (bool) {
-        // Par exemple, si le joueur choisit true pour pile et false pour face
-        bool coinFlipResult = (randomWord % 2 == 0); // true pour pile, false pour face
-        return (coinFlipResult == choice);
-    }
-
   // Fonction pour fund le contrat afin de payer les gains des joueurs
-  function fundContract() external payable whenNotPaused {
+  function fundContract() external payable {
     require(msg.value > 0, "Must send ETH to fund");
     emit ContractFunded(msg.sender, msg.value);
   }
