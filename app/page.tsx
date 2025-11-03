@@ -540,6 +540,43 @@ export default function Home() {
             }}
           />
           
+          {/* 🎯 Boutons de mise rapide */}
+          <div style={{ marginTop: 12, display: "grid", gridTemplateColumns: "repeat(4, 1fr)", gap: 8 }}>
+            {["0.0012", "0.0025", "0.005", "0.01"].map((amount) => (
+              <button
+                key={amount}
+                onClick={() => setBetAmount(amount)}
+                style={{
+                  height: 36,
+                  borderRadius: 8,
+                  border: betAmount === amount ? "2px solid #8b5cf6" : "1px solid #4c1d95",
+                  background: betAmount === amount ? "#4c1d95" : "#1a1032",
+                  color: betAmount === amount ? "#a78bfa" : "#9ca3af",
+                  fontSize: 13,
+                  fontWeight: 600,
+                  cursor: "pointer",
+                  transition: "all 0.2s ease",
+                }}
+                onMouseEnter={(e) => {
+                  if (betAmount !== amount) {
+                    e.currentTarget.style.background = "#2d1b4e";
+                    e.currentTarget.style.borderColor = "#6d28d9";
+                    e.currentTarget.style.color = "#c4b5fd";
+                  }
+                }}
+                onMouseLeave={(e) => {
+                  if (betAmount !== amount) {
+                    e.currentTarget.style.background = "#1a1032";
+                    e.currentTarget.style.borderColor = "#4c1d95";
+                    e.currentTarget.style.color = "#9ca3af";
+                  }
+                }}
+              >
+                {amount}
+              </button>
+            ))}
+          </div>
+          
           <div style={{ marginTop: 20, marginBottom: 8 }}>
             <label style={{ display: "block", fontSize: 14, color: "#d1d5db", fontWeight: 500, marginBottom: 12 }}>
               Choose Your Side
