@@ -82,12 +82,12 @@ export default function Home() {
     
     // ✅ VALIDATION: MIN_BET et MAX_BET
     const amountNum = parseFloat(amount);
-    if (amountNum < 0.001) {
-      alert("Minimum bet is 0.001 ETH");
+    if (amountNum < 0.003) {
+      alert("Minimum bet is 0.003 ETH (~$7.50)");
       return;
     }
-    if (amountNum > 1) {
-      alert("Maximum bet is 1 ETH");
+    if (amountNum > 0.02) {
+      alert("Maximum bet is 0.02 ETH (~$50)");
       return;
     }
     
@@ -514,9 +514,71 @@ export default function Home() {
                 fontSize: 14,
                 cursor: fundAmount && !isPending ? "pointer" : "not-allowed",
                 transition: "all 0.2s ease",
+                marginBottom: 16,
               }}
             >
               {isPending ? "Funding..." : "💰 Fund Contract"}
+            </button>
+            
+            {/* Pause/Unpause Section */}
+            <div style={{ 
+              marginTop: 16, 
+              padding: 12, 
+              background: isPaused ? "#7f1d1d" : "#064e3b",
+              borderRadius: 8,
+              border: isPaused ? "1px solid #ef4444" : "1px solid #10b981",
+              marginBottom: 12
+            }}>
+              <div style={{ fontSize: 13, color: "#fff", marginBottom: 8, fontWeight: 600 }}>
+                Contract Status: {isPaused ? "⏸️ PAUSED" : "▶️ ACTIVE"}
+              </div>
+              <div style={{ fontSize: 11, color: "#d1d5db", marginBottom: 0 }}>
+                {isPaused 
+                  ? "⚠️ New bets are blocked. Users cannot place bets or request VRF."
+                  : "✅ Contract is operational. Users can place bets normally."
+                }
+              </div>
+            </div>
+            
+            <button
+              onClick={async () => {
+                try {
+                  const pauseHash = await writeContractAsync({
+                    address: COUNTER_ADDRESS,
+                    abi: COUNTER_ABI as Abi,
+                    functionName: "setPaused",
+                    args: [!isPaused]
+                  });
+                  
+                  if (publicClient) {
+                    const receipt = await publicClient.waitForTransactionReceipt({ hash: pauseHash });
+                    if (receipt.status === "success") {
+                      setIsPaused(!isPaused);
+                      alert(`Contract ${!isPaused ? "paused" : "unpaused"} successfully! ${!isPaused ? "⏸️" : "▶️"}`);
+                    }
+                  }
+                } catch (e) {
+                  console.error("Pause/Unpause error:", e);
+                  alert("Failed to change pause state");
+                }
+              }}
+              disabled={isPending}
+              style={{
+                width: "100%",
+                height: 44,
+                borderRadius: 10,
+                border: "none",
+                background: isPaused
+                  ? "linear-gradient(135deg, #10b981 0%, #059669 100%)"
+                  : "linear-gradient(135deg, #ef4444 0%, #dc2626 100%)",
+                color: "#fff",
+                fontWeight: 600,
+                fontSize: 14,
+                cursor: isPending ? "not-allowed" : "pointer",
+                transition: "all 0.2s ease",
+              }}
+            >
+              {isPending ? "Processing..." : isPaused ? "▶️ Unpause Contract" : "⏸️ Pause Contract"}
             </button>
           </div>
         )}
@@ -586,7 +648,7 @@ export default function Home() {
             inputMode="decimal"
             min="0"
             step="0.001"
-            placeholder="0.0012"
+            placeholder="0.003"
             value={betAmount}
             onChange={(e) => setBetAmount(e.target.value)}
             style={{
@@ -613,7 +675,7 @@ export default function Home() {
           
           {/* 🎯 Boutons de mise rapide */}
           <div style={{ marginTop: 12, display: "grid", gridTemplateColumns: "repeat(4, 1fr)", gap: 8 }}>
-            {["0.0012", "0.0025", "0.005", "0.01"].map((amount) => (
+            {["0.003", "0.005", "0.01", "0.02"].map((amount) => (
               <button
                 key={amount}
                 onClick={() => setBetAmount(amount)}

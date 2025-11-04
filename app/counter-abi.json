@@ -63,6 +63,19 @@
   },
   {
     "type": "function",
+    "name": "accumulatedFees",
+    "inputs": [],
+    "outputs": [
+      {
+        "name": "",
+        "type": "uint256",
+        "internalType": "uint256"
+      }
+    ],
+    "stateMutability": "view"
+  },
+  {
+    "type": "function",
     "name": "admin",
     "inputs": [],
     "outputs": [
@@ -496,19 +509,6 @@
   },
   {
     "type": "function",
-    "name": "requestRandomWords",
-    "inputs": [],
-    "outputs": [
-      {
-        "name": "requestId",
-        "type": "uint256",
-        "internalType": "uint256"
-      }
-    ],
-    "stateMutability": "nonpayable"
-  },
-  {
-    "type": "function",
     "name": "requestToBet",
     "inputs": [
       {
@@ -612,6 +612,13 @@
         "internalType": "address"
       }
     ],
+    "outputs": [],
+    "stateMutability": "nonpayable"
+  },
+  {
+    "type": "function",
+    "name": "withdrawAccumulatedFees",
+    "inputs": [],
     "outputs": [],
     "stateMutability": "nonpayable"
   },
@@ -775,6 +782,25 @@
   {
     "type": "event",
     "name": "FeePaid",
+    "inputs": [
+      {
+        "name": "recipient",
+        "type": "address",
+        "indexed": true,
+        "internalType": "address"
+      },
+      {
+        "name": "amount",
+        "type": "uint256",
+        "indexed": false,
+        "internalType": "uint256"
+      }
+    ],
+    "anonymous": false
+  },
+  {
+    "type": "event",
+    "name": "FeeTransferFailed",
     "inputs": [
       {
         "name": "recipient",

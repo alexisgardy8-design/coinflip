@@ -22,7 +22,7 @@ contract Counter is VRFConsumerBaseV2Plus {
     }
     mapping(uint256 => RequestStatus) public s_requests; 
   
-    uint256 public constant MIN_BET = 0.001 ether;
+    uint256 public constant MIN_BET = 0.003 ether;
     address public immutable feeRecipient;
 
     struct Flip {
@@ -45,7 +45,7 @@ contract Counter is VRFConsumerBaseV2Plus {
     uint256 public nextBetId = 1;
     
     // 🛡️ Constantes de sécurité
-    uint256 public constant MAX_BET = 1 ether;
+    uint256 public constant MAX_BET = 0.02 ether;
     uint256 public constant BET_TIMEOUT = 1 hours;
     
     // 🛡️ Pause d'urgence
@@ -275,15 +275,15 @@ contract Counter is VRFConsumerBaseV2Plus {
   event BetCancelled(uint256 indexed betId, address indexed player, uint256 refundAmount);
 
   // 🛡️ Fonction admin pour récupérer les frais accumulés qui n'ont pas pu être transférés
-  function withdrawAccumulatedFees() external {
-    require(msg.sender == admin, "Admin only");
+  // Envoie à admin pour éviter blocage si feeRecipient continue de revert
+  function withdrawAccumulatedFees() external onlyAdmin {
     uint256 amount = accumulatedFees;
     require(amount > 0, "No accumulated fees");
     
     accumulatedFees = 0; // CEI pattern
-    (bool success, ) = payable(feeRecipient).call{value: amount}("");
+    (bool success, ) = payable(admin).call{value: amount}("");
     require(success, "Fee withdrawal failed");
-    emit FeePaid(feeRecipient, amount);
+    emit FeePaid(admin, amount);
   }
 
   // Fonction pour fund le contrat afin de payer les gains des joueurs
