@@ -5,7 +5,7 @@ import { useMiniKit } from "@coinbase/onchainkit/minikit";
 // import { useQuickAuth } from "@coinbase/onchainkit/minikit";
 import styles from "./page.module.css";
 import { COUNTER_ADDRESS, COUNTER_ABI } from "./contract";
-import { useWriteContract, usePublicClient } from "wagmi";
+import { useWriteContract, usePublicClient, useAccount } from "wagmi";
 import { Abi, parseEther } from "viem";
 
 
@@ -35,9 +35,11 @@ export default function Home() {
   const [contractBalance, setContractBalance] = useState<bigint>(BigInt(0));
   const [isPaused, setIsPaused] = useState<boolean>(false);
   const [isFlipping, setIsFlipping] = useState<boolean>(false);
+  const [adminAddress, setAdminAddress] = useState<`0x${string}` | null>(null);
 
   const { data: txHash, isPending, writeContractAsync, error: writeError, reset } = useWriteContract();
   const publicClient = usePublicClient();
+  const { address } = useAccount();
 
   useEffect(() => {
     if (!isMiniAppReady) {
@@ -45,7 +47,29 @@ export default function Home() {
     }
   }, [setMiniAppReady, isMiniAppReady]);
   
-  // 🛡️ Charger le balance du contrat et le statut de pause
+  // � Charger l'adresse admin du contrat
+  useEffect(() => {
+    const loadAdminAddress = async () => {
+      if (!publicClient) return;
+      
+      try {
+        const admin = await publicClient.readContract({
+          address: COUNTER_ADDRESS,
+          abi: COUNTER_ABI as Abi,
+          functionName: "admin"
+        }) as `0x${string}`;
+        
+        setAdminAddress(admin);
+        console.log("Admin address loaded:", admin);
+      } catch (e) {
+        console.error("Error loading admin address:", e);
+      }
+    };
+    
+    loadAdminAddress();
+  }, [publicClient]);
+  
+  // �🛡️ Charger le balance du contrat et le statut de pause
   useEffect(() => {
     const loadContractInfo = async () => {
       if (!publicClient) return;
@@ -435,26 +459,29 @@ export default function Home() {
     <div className={styles.container}>
       <header className={styles.headerWrapper}>
         <Wallet />
-        {/* Admin toggle button */}
-        <button
-          onClick={() => setShowAdminPanel(!showAdminPanel)}
-          style={{
-            position: "fixed",
-            top: 20,
-            right: 20,
-            padding: "8px 16px",
-            background: "#4c1d95",
-            color: "#fff",
-            border: "none",
-            borderRadius: 8,
-            cursor: "pointer",
-            fontSize: 12,
-            fontWeight: 600,
-            zIndex: 1000
-          }}
-        >
-          🔧 Admin
-        </button>
+        {/* Admin toggle button - visible seulement pour l'admin */}
+        {address && adminAddress && address.toLowerCase() === adminAddress.toLowerCase() && (
+          <button
+            onClick={() => setShowAdminPanel(!showAdminPanel)}
+            style={{
+              position: "fixed",
+              top: 20,
+              right: 20,
+              padding: "8px 16px",
+              background: showAdminPanel ? "#8b5cf6" : "#4c1d95",
+              color: "#fff",
+              border: showAdminPanel ? "2px solid #a78bfa" : "none",
+              borderRadius: 8,
+              cursor: "pointer",
+              fontSize: 12,
+              fontWeight: 600,
+              zIndex: 1000,
+              transition: "all 0.2s ease",
+            }}
+          >
+            🔧 Admin
+          </button>
+        )}
       </header>
 
       <div className={styles.content}>
