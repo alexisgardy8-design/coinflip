@@ -106,8 +106,8 @@ export default function Home() {
     
     // ✅ VALIDATION: MIN_BET et MAX_BET
     const amountNum = parseFloat(amount);
-    if (amountNum < 0.003) {
-      alert("Minimum bet is 0.003 ETH (~$7.50)");
+    if (amountNum < 0.0032) {
+      alert("Minimum bet is 0.0032 ETH (~$7.50)");
       return;
     }
     if (amountNum > 0.02) {
