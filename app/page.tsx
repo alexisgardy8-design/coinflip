@@ -675,7 +675,7 @@ export default function Home() {
             inputMode="decimal"
             min="0"
             step="0.001"
-            placeholder="0.003"
+            placeholder="0.0032"
             value={betAmount}
             onChange={(e) => setBetAmount(e.target.value)}
             style={{
@@ -702,7 +702,7 @@ export default function Home() {
           
           {/* 🎯 Boutons de mise rapide */}
           <div style={{ marginTop: 12, display: "grid", gridTemplateColumns: "repeat(4, 1fr)", gap: 8 }}>
-            {["0.003", "0.005", "0.01", "0.02"].map((amount) => (
+            {["0.0032", "0.005", "0.01", "0.02"].map((amount) => (
               <button
                 key={amount}
                 onClick={() => setBetAmount(amount)}
