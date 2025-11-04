@@ -603,9 +603,86 @@ export default function Home() {
                 fontSize: 14,
                 cursor: isPending ? "not-allowed" : "pointer",
                 transition: "all 0.2s ease",
+                marginBottom: 16,
               }}
             >
               {isPending ? "Processing..." : isPaused ? "▶️ Unpause Contract" : "⏸️ Pause Contract"}
+            </button>
+            
+            {/* Emergency Withdraw Section */}
+            <div style={{ 
+              marginTop: 16, 
+              padding: 12, 
+              background: "#7f1d1d",
+              borderRadius: 8,
+              border: "1px solid #ef4444",
+              marginBottom: 12
+            }}>
+              <div style={{ fontSize: 13, color: "#fff", marginBottom: 8, fontWeight: 600 }}>
+                🚨 Emergency Withdraw
+              </div>
+              <div style={{ fontSize: 11, color: "#fca5a5", marginBottom: 8 }}>
+                ⚠️ Withdraws ALL funds to admin wallet. Contract MUST be paused first.
+              </div>
+              <div style={{ fontSize: 11, color: "#d1d5db", marginBottom: 0 }}>
+                Balance: {(Number(contractBalance) / 1e18).toFixed(4)} ETH
+              </div>
+            </div>
+            
+            <button
+              onClick={async () => {
+                if (!isPaused) {
+                  alert("⚠️ You must pause the contract first before emergency withdraw!");
+                  return;
+                }
+                
+                const confirmed = confirm(
+                  `🚨 EMERGENCY WITHDRAW\n\n` +
+                  `This will withdraw ALL ${(Number(contractBalance) / 1e18).toFixed(4)} ETH from the contract.\n\n` +
+                  `Are you absolutely sure?`
+                );
+                
+                if (!confirmed) return;
+                
+                try {
+                  const withdrawHash = await writeContractAsync({
+                    address: COUNTER_ADDRESS,
+                    abi: COUNTER_ABI as Abi,
+                    functionName: "emergencyWithdraw",
+                    args: []
+                  });
+                  
+                  if (publicClient) {
+                    const receipt = await publicClient.waitForTransactionReceipt({ hash: withdrawHash });
+                    if (receipt.status === "success") {
+                      alert(`Emergency withdraw successful! ${(Number(contractBalance) / 1e18).toFixed(4)} ETH withdrawn to admin wallet. 💰`);
+                      // Refresh contract balance
+                      setContractBalance(BigInt(0));
+                    }
+                  }
+                } catch (e) {
+                  console.error("Emergency withdraw error:", e);
+                  alert("Failed to withdraw funds. Make sure contract is paused.");
+                }
+              }}
+              disabled={isPending || !isPaused}
+              style={{
+                width: "100%",
+                height: 44,
+                borderRadius: 10,
+                border: "none",
+                background: isPaused && !isPending
+                  ? "linear-gradient(135deg, #991b1b 0%, #7f1d1d 100%)"
+                  : "#4c1d95",
+                color: "#fff",
+                fontWeight: 600,
+                fontSize: 14,
+                cursor: isPaused && !isPending ? "pointer" : "not-allowed",
+                transition: "all 0.2s ease",
+                opacity: isPaused ? 1 : 0.5,
+              }}
+            >
+              {isPending ? "Withdrawing..." : !isPaused ? "🔒 Pause Required" : "🚨 Emergency Withdraw All Funds"}
             </button>
           </div>
         )}
