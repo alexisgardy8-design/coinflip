@@ -11,7 +11,7 @@ contract CounterScript is Script {
     function run() external {
         // Variables d'env requises:
         // - PRIVATE_KEY            : clé privée du déployeur
-        // - VRF_SUBSCRIPTION_ID    : ID de ta souscription VRF 2.5 (Base Sepolia)
+        // - VRF_SUBSCRIPTION_ID    : ID de ta souscription VRF 2.5 (Base Mainnet ou Sepolia)
         // - FEE_RECIPIENT          : adresse qui reçoit 2% de fees
         // Note: we rely on --private-key CLI for broadcasting; no need to parse PRIVATE_KEY in Solidity
         uint256 subId      = vm.envUint("VRF_SUBSCRIPTION_ID");

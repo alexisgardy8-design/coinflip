@@ -75,6 +75,13 @@ export default function Home() {
       if (!publicClient) return;
       
       try {
+        // Vérifier qu'on est sur Base Mainnet (Chain ID: 8453)
+        const chainId = await publicClient.getChainId();
+        if (chainId !== 8453) {
+          console.warn("⚠️ Wrong network! Please switch to Base Mainnet");
+          return;
+        }
+        
         // 📊 Utiliser la fonction getStats pour réduire les appels RPC
         const stats = await publicClient.readContract({
           address: COUNTER_ADDRESS,
@@ -104,14 +111,14 @@ export default function Home() {
     const amount = betAmount?.trim();
     if (!amount) return;
     
-    // ✅ VALIDATION: MIN_BET et MAX_BET
+    // ✅ VALIDATION: MIN_BET et MAX_BET (Base Mainnet)
     const amountNum = parseFloat(amount);
-    if (amountNum < 0.0032) {
-      alert("Minimum bet is 0.0032 ETH (~$7.50)");
+    if (amountNum < 0.012) {
+      alert("Minimum bet is 0.012 ETH (~$36)");
       return;
     }
-    if (amountNum > 0.02) {
-      alert("Maximum bet is 0.02 ETH (~$50)");
+    if (amountNum > 0.1) {
+      alert("Maximum bet is 0.1 ETH (~$300)");
       return;
     }
     
@@ -752,7 +759,7 @@ export default function Home() {
             inputMode="decimal"
             min="0"
             step="0.001"
-            placeholder="0.0032"
+            placeholder="0.012"
             value={betAmount}
             onChange={(e) => setBetAmount(e.target.value)}
             style={{
@@ -777,9 +784,9 @@ export default function Home() {
             }}
           />
           
-          {/* 🎯 Boutons de mise rapide */}
+          {/* 🎯 Boutons de mise rapide (Base Mainnet) */}
           <div style={{ marginTop: 12, display: "grid", gridTemplateColumns: "repeat(4, 1fr)", gap: 8 }}>
-            {["0.0032", "0.005", "0.01", "0.02"].map((amount) => (
+            {["0.012", "0.025", "0.05", "0.1"].map((amount) => (
               <button
                 key={amount}
                 onClick={() => setBetAmount(amount)}
@@ -967,7 +974,7 @@ export default function Home() {
                   <span style={{ color: "#a78bfa" }}>Tx: {lastTxHash.substring(0, 10)}…</span>
                   {" "}
                   <a
-                    href={`https://sepolia.basescan.org/tx/${lastTxHash}`}
+                    href={`https://basescan.org/tx/${lastTxHash}`}
                     target="_blank"
                     rel="noreferrer"
                     style={{ color: "#8b5cf6", textDecoration: "underline" }}

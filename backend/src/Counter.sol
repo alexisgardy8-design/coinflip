@@ -22,7 +22,7 @@ contract Counter is VRFConsumerBaseV2Plus {
     }
     mapping(uint256 => RequestStatus) public s_requests; 
   
-    uint256 public constant MIN_BET = 0.003 ether;
+    uint256 public constant MIN_BET = 0.012 ether; // Base Mainnet: rentable avec coût VRF ~$0.575
     address public immutable feeRecipient;
 
     struct Flip {
@@ -45,7 +45,7 @@ contract Counter is VRFConsumerBaseV2Plus {
     uint256 public nextBetId = 1;
     
     // 🛡️ Constantes de sécurité
-    uint256 public constant MAX_BET = 0.02 ether;
+    uint256 public constant MAX_BET = 0.1 ether; // Base Mainnet: limite d'exposition raisonnable
     uint256 public constant BET_TIMEOUT = 1 hours;
     
     // 🛡️ Pause d'urgence
@@ -58,16 +58,16 @@ contract Counter is VRFConsumerBaseV2Plus {
     uint256 public s_subscriptionId;
     uint256[] public requestIds;
     uint256 public lastRequestId;
-    // Base Sepolia key hash pour 500 gwei gas lane (doc Chainlink confirmé)
-    bytes32 public keyHash = 0x9e1344a1247c8a1785d0a4681a27152bffdb43666ae5bf7d14d24a5efd44bf71;
-    // callbackGasLimit: Max recommandé 2.5M pour éviter out-of-gas dans fulfillment
-    // Coût avec LINK: ~0.01 LINK par request sur Base Sepolia
-    uint32 public callbackGasLimit = 2_500_000;
-    // 3 confirmations = bon équilibre sécurité/vitesse (max 200)
+    // Base Mainnet key hash pour 2 gwei gas lane
+    bytes32 public keyHash = 0x00b81b5a830cb0a4009fbd8904de511e28631e62ce5ad231373d3cdad373ccab;
+    // callbackGasLimit optimisé pour Base Mainnet (gas minimal)
+    // Coût avec LINK: ~0.005 LINK par request sur Base Mainnet
+    uint32 public callbackGasLimit = 150_000;
+    // 3 confirmations = bon équilibre sécurité/vitesse
     uint16 public requestConfirmations = 3;
     uint32 public numWords =  1;
 
-    constructor( uint256 subscriptionId, address _feeRecipiant) VRFConsumerBaseV2Plus(0x5C210eF41CD1a72de73bF76eC39637bB0d3d7BEE) {
+    constructor( uint256 subscriptionId, address _feeRecipiant) VRFConsumerBaseV2Plus(0xd5D517aBE5cF79B7e95eC98dB0f0277788aFF634) {
         require(_feeRecipiant != address(0), "Invalid fee recipient");
         require(subscriptionId > 0, "Invalid subscription ID");
         s_subscriptionId = subscriptionId;
@@ -149,7 +149,7 @@ contract Counter is VRFConsumerBaseV2Plus {
 
     betHasPendingRequest[betId] = true; // 🛡️ Marquer comme en cours
 
-    // Demande VRF (Base Sepolia) financé par LINK
+    // Demande VRF (Base Mainnet) financé par LINK
     requestId = s_vrfCoordinator.requestRandomWords(
       VRFV2PlusClient.RandomWordsRequest({
         keyHash: keyHash,
